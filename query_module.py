@@ -538,6 +538,7 @@ def add_product_dialog():
                     spec = 1 # 补货模式下不改规格
 
             c_btn1, c_btn2 = st.columns(2)
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             if c_btn1.button("📥 直接提交", use_container_width=True, type="primary"):
                 if prod_name:
                     if mode == "新登记录入":
@@ -545,8 +546,6 @@ def add_product_dialog():
                         if not check.empty: st.error("名称已存在")
                         else:
                             # 核心：直接存入 qty，不乘 spec
-                            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
                             # 2. 将字符串作为参数传入
                             conn.execute("INSERT INTO products (prod_name, category, price, stock, unit, type, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?)",
                                 (prod_name, str(spec), price, qty, u, p_type, now_str))
@@ -556,8 +555,8 @@ def add_product_dialog():
                     else:
                         # 补货：直接增加原始数量
                         conn.execute(
-                            "UPDATE products SET stock = stock + ?, price = CASE WHEN ?>0 THEN ? ELSE price END, last_updated = datetime('now','localtime') WHERE prod_name = ?",
-                            (qty, price, price, prod_name))
+                            "UPDATE products SET stock = stock + ?, price = CASE WHEN ?>0 THEN ? ELSE price END, last_updated = ? WHERE prod_name = ?",
+                            (qty, price, price, now_str, prod_name)) # datetime 换成 ?，后面补 now_str
                         conn.commit()
                         st.toast("✅ 更新成功")
                         st.rerun()
@@ -576,15 +575,16 @@ def add_product_dialog():
             df_batch = pd.DataFrame(st.session_state.batch_list)
             st.dataframe(df_batch, use_container_width=True, hide_index=True)
             if st.button("🚀 确认全部入库", use_container_width=True, type="primary"):
+                now_batch = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 for item in st.session_state.batch_list:
                     if item['模式'] == "新登记录入":
                         conn.execute(
-                            "INSERT OR IGNORE INTO products (prod_name, category, price, stock, unit, type, last_updated) VALUES (?, ?, ?, ?, ?, ?, datetime('now','localtime'))",
-                            (item['名称'], str(item['规格']), item['单价'], item['数量'], item['单位'], item['类型']))
+                            "INSERT OR IGNORE INTO products (prod_name, category, price, stock, unit, type, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            (item['名称'], str(item['规格']), item['单价'], item['数量'], item['单位'], item['类型'], now_batch))
                     else:
                         conn.execute(
-                            "UPDATE products SET stock = stock + ?, price = CASE WHEN ?>0 THEN ? ELSE price END, last_updated = datetime('now','localtime') WHERE prod_name = ?",
-                            (item['数量'], item['单价'], item['单价'], item['名称']))
+                            "UPDATE products SET stock = stock + ?, price = CASE WHEN ?>0 THEN ? ELSE price END, last_updated = ? WHERE prod_name = ?",
+                            (item['数量'], item['单价'], item['单价'], now_batch, item['名称']))
                 conn.commit()
                 st.session_state.batch_list = []
                 st.rerun()
