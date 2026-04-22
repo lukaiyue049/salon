@@ -46,80 +46,99 @@ def show(staff_list):
     st.divider()
 
     # 2. 选购区域
-    # --- pos_module.py 选购中心部分 ---
+    col_a, col_b = st.columns([1, 1.2])
+    with col_a:
+        st.subheader("🛍️ 选购")
+        t1, t2 = st.tabs(["单品/项目", "活动礼包"])
+        with t1:
+            # 1. 业务类别选择
 
-    st.subheader("🛍️ 选购中心")
-    
-    # 1. 统一获取数据并打标签
-    df_prods = pd.read_sql("SELECT prod_name as name, price, stock, unit, '单品' as cat_type FROM products", conn)
-    df_acts = pd.read_sql("SELECT name, price, '不限' as stock, '套' as unit, '活动礼包' as cat_type, packages FROM activities", conn)
-    
-    # 合并展示
-    df_all = pd.concat([df_prods, df_acts], ignore_index=True)
-    
-    # 搜索功能
-    search_kv = st.text_input("🔍 搜索产品或活动礼包", placeholder="输入关键词...")
-    if search_kv:
-        df_all = df_all[df_all['name'].str.contains(search_kv, na=False)]
-    
-    # 渲染列表
-    for _, item in df_all.iterrows():
-        with st.container(border=True):
-            c1, c2, c3 = st.columns([3, 2, 1.5])
-            
-            # 类别标签颜色区分
-            tag_color = "blue" if item['cat_type'] == "单品" else "orange"
-            c1.markdown(f"**{item['name']}** :{tag_color}[[{item['cat_type']}]]")
-            c1.caption(f"单价: ¥{item['price']} | 库存: {item['stock']}")
-            
-            qty = c2.number_input("数量", min_value=1, step=1, key=f"add_qty_{item['name']}")
-            
-            if c3.button("➕ 加入", key=f"btn_add_{item['name']}", use_container_width=True):
-                # 构建存入购物车的字典
-                entry = {
-                    "name": item['name'],
-                    "price": item['price'],
-                    "qty": qty,
-                    "unit": item['unit'],
-                    "cat_type": item['cat_type'],
-                    "is_activity": (item['cat_type'] == "活动礼包")
-                }
-                # 如果是礼包，解出里面的详细内容
-                if entry['is_activity']:
-                    import json
-                    entry['packages'] = json.loads(item['packages'])
-                
-                st.session_state.cart.append(entry)
-                st.toast(f"已加入购物车: {item['name']}")
-    
+            p_type = st.radio("业务类别", ["实物产品", "服务项目"], horizontal=True, key="pos_p_type")
+
+            # 2. 获取数据与用途筛选
+            if p_type == "实物产品":
+                # 新增：实物产品区分用途
+                usage = st.radio("使用方式", ["带走", "在店用"], horizontal=True, key="pos_usage")
+                prods = pd.read_sql("SELECT * FROM products WHERE type='实物产品' AND stock > 0", conn)
+            else:
+                usage = None
+                prods = pd.read_sql("SELECT * FROM products WHERE type='服务项目'", conn)
+
+            if not prods.empty:
+                # 3. 选择名称
+                p_names = prods['prod_name'].tolist()
+                p = st.selectbox(f"选择{p_type}名称", p_names, key="pos_sel_p")
+
+                selected_info = prods[prods['prod_name'] == p].iloc[0]
+                st.caption(
+                    f"💰 单价: ¥{selected_info['price']} | 📦 当前库存: {selected_info['stock']} {selected_info['unit']}")
+
+                qty = st.number_input("数量", 1, 100, 1, key="pos_qty")
+
+                # 4. 自动逻辑判定
+                if p_type == "实物产品":
+                    # “在店用”强制存为次卡，“带走”则不存
+                    is_s = True if usage == "在店用" else False
+                    st.info(f"💡 模式：{usage}（{'结算后存入会员资产' if is_s else '仅扣除店内库存'}）")
                 else:
-                    st.warning(f"⚠️ 库中暂无可用的{p_type}，请先进行补货。")
-    
-            # pos_module.py 活动礼包部分
-            with t2:
-                acts = pd.read_sql("SELECT * FROM activities WHERE is_open=1", conn)
-                if not acts.empty:
-                    an = st.selectbox("选择活动", acts['name'].tolist())
-                    
-                    # 清晰的大按钮选择
-                    col_btn1, col_btn2 = st.columns(2)
-                    with col_btn1:
-                        use_in_shop = st.button("🏠 在店使用", use_container_width=True, type="primary")
-                    with col_btn2:
-                        take_away = st.button("📦 直接带走", use_container_width=True)
-                    
-                    if use_in_shop or take_away:
-                        ai = acts[acts['name'] == an].iloc[0]
-                        st.session_state.cart.append({
-                            "id": datetime.now().timestamp(),
-                            "name": f"🎁 {an}",
-                            "price": ai['price'],
-                            "qty": 1,
-                            "type": "act",
-                            "act_id": ai['id'],
-                            "usage": "store" if use_in_shop else "takeaway"
-                        })
-                        st.rerun()
+                    is_s = st.checkbox("存为次卡", value=True, key="pos_is_s")
+
+                # pos_module.py
+
+                if st.button("➕ 加入购物车", use_container_width=True, type="primary"):
+                    # 1. 获取规格折算系数
+                    try:
+                        product_spec = int(selected_info['category']) if str(selected_info['category']).isdigit() else 1
+                    except:
+                        product_spec = 1
+
+                    # --- 核心改进：统一名称处理 ---
+                    # display_name 仅用于购物车列表显示，带上“(在店用)”方便你看
+                    display_name = f"{p} ({usage})" if (p_type == "实物产品" and usage) else p
+
+                    st.session_state.cart.append({
+                        "id": datetime.now().timestamp(),
+                        "name": display_name,  # 购物车显示的名称
+                        "raw_name": p,  # 关键：存入数据库的名称必须是原始名，不带后缀
+                        "price": selected_info['price'],
+                        "qty": qty,  # 扣库存用量
+                        "salon_qty": qty * product_spec,  # 存入次卡的实际片数/次数
+                        "type": "prod",
+                        "is_salon": is_s
+                    })
+                    # ------------------------------------
+
+                    st.success(f"已加入清单")
+                    st.rerun()
+
+            else:
+                st.warning(f"⚠️ 库中暂无可用的{p_type}，请先进行补货。")
+
+        # pos_module.py 活动礼包部分
+        with t2:
+            acts = pd.read_sql("SELECT * FROM activities WHERE is_open=1", conn)
+            if not acts.empty:
+                an = st.selectbox("选择活动", acts['name'].tolist())
+                
+                # 清晰的大按钮选择
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    use_in_shop = st.button("🏠 在店使用", use_container_width=True, type="primary")
+                with col_btn2:
+                    take_away = st.button("📦 直接带走", use_container_width=True)
+                
+                if use_in_shop or take_away:
+                    ai = acts[acts['name'] == an].iloc[0]
+                    st.session_state.cart.append({
+                        "id": datetime.now().timestamp(),
+                        "name": f"🎁 {an}",
+                        "price": ai['price'],
+                        "qty": 1,
+                        "type": "act",
+                        "act_id": ai['id'],
+                        "usage": "store" if use_in_shop else "takeaway"
+                    })
+                    st.rerun()
 
     with col_b:
         st.subheader("📋 结算")
