@@ -292,7 +292,7 @@ def add_product_dialog():
                     if st.session_state.batch_list:
                         # 1. 定义固定的列宽比例 [名称, 类型, 单价, 数量, 单位]
                         # 这能保证在 iPad 上上下绝对对齐
-                        batch_col_layout = [2.5, 1.5, 1.5, 1.5, 1]
+                        batch_col_layout = [1, 1, 1, 1, 1]
                         
                         # 2. 手动渲染表头
                         h_cols = st.columns(batch_col_layout)
