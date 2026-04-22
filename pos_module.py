@@ -131,7 +131,7 @@ def show(staff_list):
             st.write("购物车是空的")
         else:
             for idx, item in enumerate(st.session_state.cart):
-                c1, c2, c3 = st.columns([3, 1, 0.8])
+                c1, c2, c3 = st.columns([3, 1, 1])
                 c1.write(f"{item['name']} x{item['qty']}")
                 c2.write(f"¥{item['price'] * item['qty']}")
                 if c3.button("🗑️ 删除", key=f"del_{item['id']}", use_container_width=True):
