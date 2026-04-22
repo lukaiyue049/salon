@@ -61,6 +61,10 @@ st.markdown("""
         border-radius: 20px !important;
         border: none !important;
         padding: 5px 20px !important;
+        display: inline-flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+        gap: 4px !important;
     }
     .stButton>button:hover {
         background-color: #A6866D !important;
