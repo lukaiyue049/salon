@@ -3,16 +3,17 @@ import pandas as pd
 import json
 import time
 from datetime import datetime
-from db_manager import save_data
+from db_manager import save_data, read_data
 
 def show(data_bundle):
     st.header("💰 收银台")
     if 'cart' not in st.session_state:
         st.session_state.cart = []
 
-    products_df = data_bundle["products"]
-    members_df = data_bundle["members"]
-    acts_df = data_bundle["activities"]
+    # 从 bundle 获取数据（优先使用缓存）
+    products_df = data_bundle["products"].copy()
+    members_df = data_bundle["members"].copy()
+    acts_df = data_bundle["activities"].copy()
     config_df = data_bundle["sys_config"]
     staff_list = data_bundle["staffs"]['name'].tolist() if not data_bundle["staffs"].empty else ["店长"]
 
@@ -45,17 +46,18 @@ def show(data_bundle):
     st.divider()
     col_a, col_b = st.columns([1, 1.2])
 
-    # 购物车添加逻辑（与原 pos_module 一致，略作简化）
+    # 购物车添加部分
     with col_a:
         st.subheader("🛍️ 业务选购")
-        t1, t2, t3 = st.tabs(["实物产品", "服务项目", "活动礼包"])
+        t1, t2, t3 = st.tabs(["🛍️ 实物产品", "💆 服务项目", "🎁 活动礼包"])
+
         with t1:
             prods = products_df[(products_df['type']=='实物产品') & (products_df['stock'].astype(float) > 0)]
             if not prods.empty:
                 p_name = st.selectbox("选择产品", prods['prod_name'].tolist(), key="t1")
                 usage = st.radio("使用方式", ["直接带走", "在店使用"], horizontal=True, key="u1")
                 qty = st.number_input("数量", 1, 100, 1, key="q1")
-                if st.button("➕ 加入购物车", key="b1"):
+                if st.button("➕ 加入购物车", key="b1", use_container_width=True):
                     item = prods[prods['prod_name'] == p_name].iloc[0]
                     st.session_state.cart.append({
                         "id": time.time(), "name": f"{p_name} ({usage})", "raw_name": p_name,
@@ -63,24 +65,30 @@ def show(data_bundle):
                         "is_store_use": (usage == "在店使用")
                     })
                     st.rerun()
+            else:
+                st.info("暂无库存实物产品")
+
         with t2:
             items = products_df[products_df['type']=='服务项目']
             if not items.empty:
                 i_name = st.selectbox("选择项目", items['prod_name'].tolist(), key="t2")
                 qty_i = st.number_input("数量", 1, 100, 1, key="q2")
-                if st.button("➕ 加入购物车", key="b2"):
+                if st.button("➕ 加入购物车", key="b2", use_container_width=True):
                     item = items[items['prod_name'] == i_name].iloc[0]
                     st.session_state.cart.append({
                         "id": time.time(), "name": f"{i_name} (在店使用)", "raw_name": i_name,
                         "price": float(item['price']), "qty": qty_i, "is_activity": False, "is_store_use": True
                     })
                     st.rerun()
+            else:
+                st.info("暂无服务项目")
+
         with t3:
             acts = acts_df[acts_df['is_open'].astype(str) == '1']
             if not acts.empty:
                 a_name = st.selectbox("选择活动礼包", acts['name'].tolist(), key="t3")
                 qty_a = st.number_input("数量", 1, 100, 1, key="q3")
-                if st.button("➕ 加入购物车", key="b3"):
+                if st.button("➕ 加入购物车", key="b3", use_container_width=True):
                     ai = acts[acts['name'] == a_name].iloc[0]
                     st.session_state.cart.append({
                         "id": time.time(), "name": f"🎁 {a_name}", "price": float(ai['price']),
@@ -88,6 +96,8 @@ def show(data_bundle):
                         "is_store_use": True
                     })
                     st.rerun()
+            else:
+                st.info("暂无进行中的活动")
 
     # 购物车展示与结算
     with col_b:
@@ -118,20 +128,20 @@ def show(data_bundle):
                     st.error("余额不足！")
                 else:
                     with st.spinner("结算中..."):
-                        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         # 重新读取最新数据（避免并发冲突）
-                        from db_manager import read_data
                         members_df = read_data("members")
                         products_df = read_data("products")
                         salon_df = read_data("salon_items")
                         records_df = read_data("records")
+                        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                         # 更新会员
-                        m_idx = members_df[members_df['phone'] == sel_m['phone']].index[0]
-                        if method == "余额扣款":
-                            members_df.at[m_idx, 'balance'] = float(members_df.at[m_idx, 'balance']) - total
-                        elif method == "挂账":
-                            members_df.at[m_idx, 'debt'] = float(members_df.at[m_idx, 'debt']) + total
+                        m_idx = members_df[members_df['phone'] == sel_m['phone']].index
+                        if len(m_idx) > 0:
+                            if method == "余额扣款":
+                                members_df.at[m_idx[0], 'balance'] = float(members_df.at[m_idx[0], 'balance']) - total
+                            elif method == "挂账":
+                                members_df.at[m_idx[0], 'debt'] = float(members_df.at[m_idx[0], 'debt']) + total
 
                         # 处理购物车：扣库存，增加院装资产
                         for item in st.session_state.cart:
@@ -177,5 +187,6 @@ def show(data_bundle):
                         st.balloons()
                         st.success("结算成功！")
                         st.session_state.cart = []
+                        st.cache_data.clear()
                         time.sleep(1)
                         st.rerun()
