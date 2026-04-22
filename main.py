@@ -23,14 +23,15 @@ st.markdown("""
         background-color: #FDFBF9;
     }
 
-    /* ========== 平板触屏优化：按钮更大 ========== */
+    /* ========== 平板触屏优化：按钮更大（但不强制等宽） ========== */
     button, [data-testid="baseButton-secondary"], [data-testid="baseButton-primary"] {
         min-height: 48px !important;
         padding: 0.5rem 1rem !important;
         font-size: 1rem !important;
+        white-space: nowrap !important;   /* 防止按钮文字折行 */
     }
 
-    /* 统一字体大小（不影响原生组件样式） */
+    /* 统一字体大小 */
     html, body, [class*="st-"] {
         font-size: 16px;
     }
@@ -84,11 +85,11 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
 
-    /* ========== radio 按钮组样式（触摸优化，禁止文字折行） ========== */
+    /* ========== radio 按钮组样式：自适应宽度，不强制等宽 ========== */
     div[role="radiogroup"] {
         display: flex;
         gap: 8px;
-        flex-wrap: wrap;
+        flex-wrap: wrap;      /* 空间不足时换行，但每个按钮内文字不折行 */
         margin-bottom: 10px;
     }
     div[role="radiogroup"] label {
@@ -98,10 +99,11 @@ st.markdown("""
         padding: 8px 16px !important;
         margin: 0 !important;
         cursor: pointer;
-        flex: 1;
-        text-align: center;
-        white-space: nowrap;   /* 防止文字折行 */
-        min-width: 70px;       /* 保证按钮最小宽度，避免过窄 */
+        white-space: nowrap;   /* 按钮内文字禁止折行 */
+        /* 移除 flex:1，让宽度由内容决定 */
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
     }
     div[role="radiogroup"] label:hover {
         background-color: #E2D1C3;
@@ -116,7 +118,6 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
-
 # 2. 侧边栏导航
 with st.sidebar:
     # --- 美容院温馨风格标题：保持居中但更有质感 ---
