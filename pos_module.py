@@ -2,28 +2,30 @@ import streamlit as st
 import pandas as pd
 import json
 from datetime import datetime
-# 修改：引入云端数据库接口
 from db_manager import read_data, save_data
 import time
 
-def show(staff_list):
+# 修改：增加 products_df, members_df 等参数，由 main.py 统一传入
+def show(staff_list, products_df=None, members_df=None, acts_df=None, config_df=None):
     st.header("💰 收银台")
     
     if 'cart' not in st.session_state:
         st.session_state.cart = []
 
-    # 1. 云端获取配置和基础数据
-    config_df = read_data("sys_config")
-    limit = 500.0
+    # --- 1. 优先使用传入的数据，如果没有（比如直接运行该模块）再读取 ---
+    if config_df is None: config_df = read_data("sys_config")
+    if members_df is None: members_df = read_data("members")
+    if products_df is None: products_df = read_data("products")
+    if acts_df is None: acts_df = read_data("activities")
 
-    # 加固：确保 config_df 不为空且包含需要的列
+    # 配置项提取
+    limit = 500.0
     if not config_df.empty and 'item' in config_df.columns:
         debt_row = config_df[config_df['item'] == 'debt_limit']
         if not debt_row.empty:
             limit = float(debt_row['value'].values[0])
 
-    members_df = read_data("members")
-    # 强制转换 phone 为字符串，避免 138...0.0 的浮点数问题
+    # 强制转换 phone 为字符串
     if not members_df.empty:
         members_df['phone'] = members_df['phone'].astype(str).str.replace('.0', '', regex=False)
     
@@ -33,7 +35,6 @@ def show(staff_list):
     sel_m = None
 
     if q and not members_df.empty:
-        # 在内存中过滤会员
         m_df = members_df[
             (members_df['name'].str.contains(q, na=False)) | 
             (members_df['phone'].str.contains(q, na=False))
@@ -58,8 +59,6 @@ def show(staff_list):
     with col_a:
         st.subheader("🛍️ 业务选购")
         t1, t2, t3 = st.tabs(["🛍️ 实物产品", "💆 服务项目", "🎁 活动礼包"])
-        
-        products_df = read_data("products")
 
         with t1: # 实物产品
             prods = products_df[(products_df['type']=='实物产品') & (products_df['stock'].astype(float) > 0)]
@@ -99,19 +98,10 @@ def show(staff_list):
                     st.rerun()
 
         with t3: # 活动礼包
-            acts_df = read_data("activities")
-            # 将原有的 acts = acts_df[acts_df['is_open'].astype(str) == '1'] 改为：
-
-            # 1. 先把所有列名去掉空格，并转为小写，防止云端格式混乱
+            # 安全清理列名
             acts_df.columns = [c.strip().lower() for c in acts_df.columns]
+            acts = acts_df[acts_df['is_open'].astype(str) == '1'] if 'is_open' in acts_df.columns else acts_df
             
-            # 2. 安全检查列是否存在
-            if 'is_open' in acts_df.columns:
-                acts = acts_df[acts_df['is_open'].astype(str) == '1']
-            else:
-                # 如果还是找不到，就直接显示全部，保证不报错
-                acts = acts_df
-                st.error("⚠️ 云端表格中未识别到 'is_open' 列，请检查表头是否有空格")
             if not acts.empty:
                 a_name = st.selectbox("选择活动礼包", acts['name'].tolist(), key="sel_t3")
                 qty_a = st.number_input("数量", 1, 100, 1, key="qty_t3")
@@ -124,7 +114,7 @@ def show(staff_list):
                         "qty": qty_a,
                         "is_activity": True,
                         "packages": json.loads(ai['packages']),
-                        "is_store_use": True # 礼包默认入库
+                        "is_store_use": True 
                     })
                     st.rerun()
 
@@ -136,7 +126,7 @@ def show(staff_list):
             total = 0
             for idx, item in enumerate(st.session_state.cart):
                 with st.container(border=True):
-                    c1, c2, c3 = st.columns([3, 1.5, 1])
+                    c1, c2, c3 = st.columns([3, 1.5, 1], vertical_alignment="center")
                     c1.write(f"**{item['name']}**")
                     subtotal = item['price'] * item['qty']
                     total += subtotal
@@ -156,61 +146,54 @@ def show(staff_list):
                 elif method == "余额扣款" and float(sel_m['balance']) < total:
                     st.error("余额不足！")
                 else:
-                    # --- 开始云端同步逻辑 ---
-                    with st.spinner("正在同步云端数据..."):
+                    # --- 开始云端写入 ---
+                    with st.spinner("正在提交结算..."):
                         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         
-                        # A. 更新会员资产 (余额/欠款)
-                        all_members = read_data("members")
-                        m_idx = all_members[all_members['phone'] == sel_m['phone']].index[0]
+                        # 1. 更新会员
+                        m_idx = members_df[members_df['phone'] == sel_m['phone']].index[0]
                         if method == "余额扣款":
-                            all_members.at[m_idx, 'balance'] = float(all_members.at[m_idx, 'balance']) - total
+                            members_df.at[m_idx, 'balance'] = float(members_df.at[m_idx, 'balance']) - total
                         elif method == "挂账":
-                            all_members.at[m_idx, 'debt'] = float(all_members.at[m_idx, 'debt']) + total
-                        save_data("members", all_members)
+                            members_df.at[m_idx, 'debt'] = float(members_df.at[m_idx, 'debt']) + total
+                        save_data("members", members_df)
 
-                        # B. 更新产品库存 & 院装资产
-                        all_prods = read_data("products")
-                        all_salon = read_data("salon_items")
+                        # 2. 更新库存与院装资产
+                        all_salon = read_data("salon_items") # 院装资产表还是得读一次
                         
                         for i in st.session_state.cart:
                             if i['is_activity']:
-                                # 礼包拆解逻辑
                                 for p_n, p_q in i['packages'].items():
                                     t_qty = p_q * i['qty']
-                                    # 扣库存
-                                    p_idx_list = all_prods[all_prods['prod_name'] == p_n].index
+                                    p_idx_list = products_df[products_df['prod_name'] == p_n].index
                                     if not p_idx_list.empty:
                                         p_idx = p_idx_list[0]
-                                        new_stock = max(0, float(all_prods.at[p_idx, 'stock']) - t_qty)
-                                        all_prods.at[p_idx, 'stock'] = new_stock
-                                        # 入库院装资产
-                                        spec = float(all_prods.at[p_idx, 'category']) if str(all_prods.at[p_idx, 'category']).replace('.','').isdigit() else 1
+                                        products_df.at[p_idx, 'stock'] = max(0, float(products_df.at[p_idx, 'stock']) - t_qty)
+                                        spec = float(products_df.at[p_idx, 'category']) if str(products_df.at[p_idx, 'category']).replace('.','').isdigit() else 1
                                         new_asset = pd.DataFrame([{
                                             "member_phone": sel_m['phone'], "item_name": p_n,
                                             "total_qty": t_qty * spec, "used_qty": 0,
-                                            "status": "使用中", "unit": all_prods.at[p_idx, 'unit'], "buy_date": now_str
+                                            "status": "使用中", "unit": products_df.at[p_idx, 'unit'], "buy_date": now_str
                                         }])
                                         all_salon = pd.concat([all_salon, new_asset], ignore_index=True)
                             else:
-                                # 单品处理
-                                p_idx_list = all_prods[all_prods['prod_name'] == i['raw_name']].index
+                                p_idx_list = products_df[products_df['prod_name'] == i['raw_name']].index
                                 if not p_idx_list.empty:
                                     p_idx = p_idx_list[0]
-                                    all_prods.at[p_idx, 'stock'] = max(0, float(all_prods.at[p_idx, 'stock']) - i['qty'])
+                                    products_df.at[p_idx, 'stock'] = max(0, float(products_df.at[p_idx, 'stock']) - i['qty'])
                                     if i['is_store_use']:
-                                        spec = float(all_prods.at[p_idx, 'category']) if str(all_prods.at[p_idx, 'category']).replace('.','').isdigit() else 1
+                                        spec = float(products_df.at[p_idx, 'category']) if str(products_df.at[p_idx, 'category']).replace('.','').isdigit() else 1
                                         new_asset = pd.DataFrame([{
                                             "member_phone": sel_m['phone'], "item_name": i['raw_name'],
                                             "total_qty": i['qty'] * spec, "used_qty": 0,
-                                            "status": "使用中", "unit": all_prods.at[p_idx, 'unit'], "buy_date": now_str
+                                            "status": "使用中", "unit": products_df.at[p_idx, 'unit'], "buy_date": now_str
                                         }])
                                         all_salon = pd.concat([all_salon, new_asset], ignore_index=True)
 
-                        save_data("products", all_prods)
+                        save_data("products", products_df)
                         save_data("salon_items", all_salon)
 
-                        # C. 记录流水
+                        # 3. 记录流水
                         all_records = read_data("records")
                         desc = ",".join([item['name'] for item in st.session_state.cart])
                         new_rec = pd.DataFrame([{
@@ -220,7 +203,8 @@ def show(staff_list):
                         save_data("records", pd.concat([all_records, new_rec], ignore_index=True))
 
                         st.balloons()
-                        st.success("结算成功！数据已同步云端。")
+                        st.success("结算成功！")
                         st.session_state.cart = []
-                        time.sleep(1.5)
+                        st.cache_data.clear() # 关键：清空缓存，让下一次加载拿到最新数据
+                        time.sleep(1)
                         st.rerun()
