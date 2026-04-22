@@ -102,6 +102,7 @@ def add_product_dialog():
                         prods_df.at[idx, 'price'] = price
                     prods_df.at[idx, 'last_updated'] = now_str
                     save_data("products", prods_df)
+                st.cache_data.clear()
                 st.rerun()
             if c2.button("➕ 加入清单", use_container_width=True):
                 st.session_state.batch_list.append({
@@ -129,6 +130,7 @@ def add_product_dialog():
                                 prods_df.at[idx[0], 'price'] = item['单价']
                 save_data("products", prods_df)
                 st.session_state.batch_list = []
+                st.cache_data.clear()
                 st.rerun()
         else:
             st.info("清单为空")
@@ -158,6 +160,7 @@ def deduct_product_dialog():
         }])
         save_data("products", prods_df)
         save_data("records", pd.concat([records_df, new_rec], ignore_index=True))
+        st.cache_data.clear()
         st.rerun()
 
 @st.dialog("确认删除")
@@ -166,4 +169,5 @@ def confirm_delete_product(name, p_type):
         prods_df = read_data("products")
         prods_df = prods_df[prods_df['prod_name'] != name]
         save_data("products", prods_df)
+        st.cache_data.clear()   # ← 新增：清除缓存
         st.rerun()
