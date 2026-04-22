@@ -9,22 +9,28 @@ def get_conn():
     # ttl=0 极其重要：确保收银时 iPad 看到的是云端最新数据，不使用本地缓存
     return st.connection("gsheets", type=GSheetsConnection)
 
-def read_data(table_name):
-    # 假设你在 secrets.toml 中配置了 [connections.gsheets]
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    
-    try:
-        # 核心修改：直接用 gsheets 的 read 方法，而不是 pd.read_sql
-        df = conn.read(worksheet=table_name, ttl="0")
-        
-        # 关键修复：处理 Google Sheets 读入空行或全 NA 的情况
-        df = df.dropna(how='all')
-        return df
-    except Exception as e:
-        st.error(f"读取表格 {table_name} 失败，请检查名称是否一致。")
-        # 返回一个带有预设列的空表，防止 pos_module 崩溃
-        return pd.DataFrame()
+# db_manager.py
 
+def read_data(table_name):
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    try:
+        df = conn.read(worksheet=table_name, ttl="0")
+        if df is None or df.empty:
+            # 如果读到的是空表，手动创建一个带正确标题的空 DataFrame
+            return create_empty_df(table_name)
+        return df
+    except Exception:
+        return create_empty_df(table_name)
+
+def create_empty_df(table_name):
+    # 为各个表定义标准的列名
+    cols = {
+        "members": ["phone", "name", "balance", "skin_info", "debt", "note", "reg_date"],
+        "products": ["prod_name", "category", "price", "stock", "unit", "type", "last_updated"],
+        "records": ["member_phone", "date", "items", "total_amount", "status", "staff_name"],
+        "salon_items": ["member_phone", "item_name", "total_qty", "used_qty", "status", "unit", "buy_date"]
+    }
+    return pd.DataFrame(columns=cols.get(table_name, []))
 def save_data(table_name, df):
     conn = st.connection("gsheets", type=GSheetsConnection)
     try:
