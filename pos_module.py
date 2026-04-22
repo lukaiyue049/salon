@@ -100,7 +100,18 @@ def show(staff_list):
 
         with t3: # 活动礼包
             acts_df = read_data("activities")
-            acts = acts_df[acts_df['is_open'].astype(str) == '1']
+            # 将原有的 acts = acts_df[acts_df['is_open'].astype(str) == '1'] 改为：
+
+            # 1. 先把所有列名去掉空格，并转为小写，防止云端格式混乱
+            acts_df.columns = [c.strip().lower() for c in acts_df.columns]
+            
+            # 2. 安全检查列是否存在
+            if 'is_open' in acts_df.columns:
+                acts = acts_df[acts_df['is_open'].astype(str) == '1']
+            else:
+                # 如果还是找不到，就直接显示全部，保证不报错
+                acts = acts_df
+                st.error("⚠️ 云端表格中未识别到 'is_open' 列，请检查表头是否有空格")
             if not acts.empty:
                 a_name = st.selectbox("选择活动礼包", acts['name'].tolist(), key="sel_t3")
                 qty_a = st.number_input("数量", 1, 100, 1, key="qty_t3")
