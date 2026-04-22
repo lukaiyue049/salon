@@ -81,7 +81,6 @@ def show(data_bundle):
                     st.error("请至少选择一个会员")
                 else:
                     with st.spinner("同步云端..."):
-                        # 重新拉取最新数据
                         df_p = read_data("products")
                         df_si = read_data("salon_items")
                         df_r = read_data("records")
