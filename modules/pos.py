@@ -127,7 +127,6 @@ def show(data_bundle):
                 elif method == "余额扣款" and float(sel_m['balance']) < total:
                     st.error("余额不足！")
                 else:
-                    st.warning("⚠️ 注意：结算使用的是最近一次同步的数据。如需最新库存，请先点击侧边栏「同步最新数据」按钮。")
                     with st.spinner("结算中..."):
                         # 使用缓存数据（副本）
                         members_df = data_bundle["members"].copy()
