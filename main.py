@@ -247,7 +247,8 @@ elif selected == "项目库存":
                 cols[0].write(row['prod_name'])
                 cols[1].write(f"¥{row['price']:.2f}")
                 cols[2].write(f"{row['stock']} {row['unit']}")
-                cols[3].write(row['last_updated'][:16] if row['last_updated'] else "未知")
+                last_time = str(row['last_updated']) if row['last_updated'] else "未知"
+                cols[3].write(last_time[:16] if last_time != "未知" else "未知")
                 if cols[4].button("🗑️", key=f"del_{prod_type}_{row['prod_name']}_{idx}", help="删除"):
                     query_module.confirm_delete_product(row['prod_name'], prod_type)
             else:
