@@ -29,27 +29,28 @@ def show_member_management():
     # --- 1. 重新定义顶部操作栏 (由 2 列改为 4 列) ---
     # --- 1. 重新定义顶部操作栏 (4列布局：搜索、状态开关、注册按钮、批量按钮) ---
     # 第一行：搜索框 + 只看超额开关
-row1_col1, row1_col2 = st.columns([3, 1])
-with row1_col1:
-    search = st.text_input("搜索", placeholder="🔍 姓名/手机号", label_visibility="collapsed")
-with row1_col2:
-    only_debt = st.toggle("🚨 只看超额", value=False)
+    # 第一行：搜索框 + 只看超额开关
+    row1_col1, row1_col2 = st.columns([3, 1])
+    with row1_col1:
+        search = st.text_input("搜索", placeholder="🔍 姓名/手机号", label_visibility="collapsed")
+    with row1_col2:
+        only_debt = st.toggle("🚨 只看超额", value=False)
 
-# 第二行：三个操作按钮
-row2_col1, row2_col2, row2_col3 = st.columns(3)
-with row2_col1:
-    if st.button("➕ 注册会员", use_container_width=True):
-        register_member_dialog()
-with row2_col2:
-    if st.button("📥 批量导入", use_container_width=True):
-        st.session_state.show_batch = not st.session_state.get('show_batch', False)
-        st.rerun()
-with row2_col3:
-    if st.button("🗑️ 批量删除", use_container_width=True, type="secondary"):
-        st.session_state.batch_delete_mode = not st.session_state.batch_delete_mode
-        if not st.session_state.batch_delete_mode:
-            st.session_state.selected_members = []
-        st.rerun()
+    # 第二行：三个操作按钮
+    row2_col1, row2_col2, row2_col3 = st.columns(3)
+    with row2_col1:
+        if st.button("➕ 注册会员", use_container_width=True):
+            register_member_dialog()
+    with row2_col2:
+        if st.button("📥 批量导入", use_container_width=True):
+            st.session_state.show_batch = not st.session_state.get('show_batch', False)
+            st.rerun()
+    with row2_col3:
+        if st.button("🗑️ 批量删除", use_container_width=True, type="secondary"):
+            st.session_state.batch_delete_mode = not st.session_state.batch_delete_mode
+            if not st.session_state.batch_delete_mode:
+                st.session_state.selected_members = []
+            st.rerun()
 
     # B. 批量导入界面
     if st.session_state.get('show_batch', False):
