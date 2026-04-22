@@ -15,10 +15,17 @@ def show(staff_list):
     # 1. 云端获取配置和基础数据
     config_df = read_data("sys_config")
     limit = 500.0
-    if not config_df.empty and 'debt_limit' in config_df['item'].values:
-        limit = float(config_df[config_df['item']=='debt_limit']['value'].values[0])
+
+    # 加固：确保 config_df 不为空且包含需要的列
+    if not config_df.empty and 'item' in config_df.columns:
+        debt_row = config_df[config_df['item'] == 'debt_limit']
+        if not debt_row.empty:
+            limit = float(debt_row['value'].values[0])
 
     members_df = read_data("members")
+    # 强制转换 phone 为字符串，避免 138...0.0 的浮点数问题
+    if not members_df.empty:
+        members_df['phone'] = members_df['phone'].astype(str).str.replace('.0', '', regex=False)
     
     # 2. 会员搜索
     st.subheader("👤 会员搜索")
