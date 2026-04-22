@@ -32,7 +32,7 @@ def show(staff_list):
             import query_module
             potential_phone = q if (q.isdigit() and len(q) == 11) else ""
             if st.button("➕ 快速注册新会员", type="primary"):
-                query_module.register_dialog(default_phone=potential_phone)
+                query_module.register_member_dialog()
 
     st.divider()
 
