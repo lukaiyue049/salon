@@ -171,7 +171,7 @@ def show_member_management():
             if st.session_state.batch_delete_mode:
                 cols = st.columns([0.5, 1.5, 2, 1, 1])  # 复选框 + 姓名 + 备注 + 余额 + 欠款
             else:
-                cols = st.columns([1.5, 2, 1, 1, 0.5])  # 姓名 + 备注 + 余额 + 欠款 + 删除按钮
+                cols = st.columns([1.5, 2, 1, 1, 0.8])  # 姓名 + 备注 + 余额 + 欠款 + 删除按钮
 
             idx_col = 0
 
