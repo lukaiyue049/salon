@@ -99,11 +99,12 @@ st.markdown("""
         padding: 8px 16px !important;
         margin: 0 !important;
         cursor: pointer;
-        white-space: nowrap;   /* 按钮内文字禁止折行 */
-        /* 移除 flex:1，让宽度由内容决定 */
+        white-space: nowrap;
         display: inline-flex;
         align-items: center;
         gap: 6px;
+        min-width: 70px;          /* 保证最小宽度，防止文字被截断 */
+        font-size: 0.9rem;        /* 稍微缩小字体，留出空间 */
     }
     div[role="radiogroup"] label:hover {
         background-color: #E2D1C3;
