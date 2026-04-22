@@ -104,7 +104,8 @@ def show_activity_center():
                             "INSERT INTO records (member_phone, date, items, total_amount, status, staff_name) VALUES (?, datetime('now','localtime'), ?, ?, '现结', ?)",
                             (p_phone, f"批量办理活动:{sel_act}", ad['price'], staff))
                     conn.commit()
-                    st.success(f"已成功办理！")
+                    st.toast(f"✅ 已成功为 {len(targs)} 位会员办理活动！", icon="🎊")
+                    time.sleep(1.5)  # 暂停 1.5 秒，给用户看提示的时间
                     st.rerun()
 
     # --- t3: 活动列表管理 (包含实时详情) ---
