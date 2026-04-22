@@ -36,156 +36,161 @@ def show(staff_list):
 
     st.divider()
 
-    # 2. 选购区域与结算区域布局
+    # 2. 布局
     col_a, col_b = st.columns([1, 1.2])
 
     with col_a:
         st.subheader("🛍️ 业务选购")
-        
-        # --- 核心修改：合并单品与活动礼包数据 ---
-        # 获取单品
-        df_prods = pd.read_sql("SELECT prod_name as name, price, stock, unit, '单品' as cat_type, category FROM products", conn)
-        # 获取礼包
-        df_acts = pd.read_sql("SELECT name, price, '不限' as stock, '套' as unit, '活动礼包' as cat_type, packages, id as act_id FROM activities WHERE is_open=1", conn)
-        
-        # 合并展示
-        df_all = pd.concat([df_prods, df_acts], ignore_index=True)
-        
-        # 搜索框
-        search_item = st.text_input("🔍 输入名称快速搜索产品或礼包", placeholder="如：补水、套餐...")
-        if search_item:
-            df_all = df_all[df_all['name'].str.contains(search_item, na=False)]
+        # 按照你的要求分类：单品 / 项目 / 礼包
+        t1, t2, t3 = st.tabs(["💊 实物产品", "💆 服务项目", "🎁 活动礼包"])
 
-        # 循环渲染选购清单
-        for _, item in df_all.iterrows():
-            with st.container(border=True):
-                c1, c2, c3 = st.columns([3, 2, 1.5])
-                
-                # 样式区分
-                is_act = (item['cat_type'] == "活动礼包")
-                tag_color = "orange" if is_act else "blue"
-                c1.markdown(f"**{item['name']}** :{tag_color}[[{item['cat_type']}]]")
-                c1.caption(f"单价: ¥{item['price']} | 库存: {item['stock']}")
-                
-                # 数量选择
-                qty = c2.number_input("数量", min_value=1, step=1, key=f"qty_{item['name']}")
-                
-                if c3.button("➕ 加入", key=f"btn_{item['name']}", use_container_width=True):
-                    entry = {
+        # --- 分类1：实物产品 ---
+        with t1:
+            prods = pd.read_sql("SELECT * FROM products WHERE type='实物产品' AND stock > 0", conn)
+            if not prods.empty:
+                p_name = st.selectbox("选择产品", prods['prod_name'].tolist(), key="sel_t1")
+                usage = st.radio("使用方式", ["直接带走", "在店使用"], horizontal=True, key="usage_t1")
+                qty = st.number_input("数量", 1, 100, 1, key="qty_t1")
+                if st.button("➕ 加入购物车", key="btn_t1", use_container_width=True, type="primary"):
+                    item_info = prods[prods['prod_name'] == p_name].iloc[0]
+                    st.session_state.cart.append({
                         "id": datetime.now().timestamp(),
-                        "name": item['name'],
-                        "price": item['price'],
+                        "name": f"{p_name} ({usage})",
+                        "raw_name": p_name,
+                        "price": item_info['price'],
                         "qty": qty,
-                        "unit": item['unit'],
-                        "cat_type": item['cat_type'],
-                        "is_activity": is_act,
-                        "is_store_use": True # 默认开启存店
-                    }
-                    # 礼包解析内容，单品记录原始名
-                    if is_act:
-                        entry['packages'] = json.loads(item['packages'])
-                        entry['act_id'] = item['act_id']
-                    else:
-                        entry['raw_name'] = item['name']
-                    
-                    st.session_state.cart.append(entry)
-                    st.toast(f"已加入购物车: {item['name']}")
+                        "is_activity": False,
+                        "is_store_use": True if usage == "在店使用" else False
+                    })
+                    st.rerun()
+            else:
+                st.info("库中暂无实物产品")
+
+        # --- 分类2：服务项目 ---
+        with t2:
+            items = pd.read_sql("SELECT * FROM products WHERE type='服务项目'", conn)
+            if not items.empty:
+                i_name = st.selectbox("选择项目", items['prod_name'].tolist(), key="sel_t2")
+                # 项目通常默认在店用，但也可以带走（如代金券性质）
+                usage_i = st.radio("使用方式", ["在店使用", "直接带走"], horizontal=True, key="usage_t2")
+                qty_i = st.number_input("数量", 1, 100, 1, key="qty_t2")
+                if st.button("➕ 加入购物车", key="btn_t2", use_container_width=True, type="primary"):
+                    item_info = items[items['prod_name'] == i_name].iloc[0]
+                    st.session_state.cart.append({
+                        "id": datetime.now().timestamp(),
+                        "name": f"{i_name} ({usage_i})",
+                        "raw_name": i_name,
+                        "price": item_info['price'],
+                        "qty": qty_i,
+                        "is_activity": False,
+                        "is_store_use": True if usage_i == "在店使用" else False
+                    })
                     st.rerun()
 
+        # --- 分类3：活动礼包 ---
+        with t3:
+            acts = pd.read_sql("SELECT * FROM activities WHERE is_open=1", conn)
+            if not acts.empty:
+                a_name = st.selectbox("选择活动礼包", acts['name'].tolist(), key="sel_t3")
+                usage_a = st.radio("使用方式", ["在店使用", "直接带走"], horizontal=True, key="usage_t3")
+                qty_a = st.number_input("数量", 1, 100, 1, key="qty_t3")
+                if st.button("➕ 加入购物车", key="btn_t3", use_container_width=True, type="primary"):
+                    ai = acts[acts['name'] == a_name].iloc[0]
+                    st.session_state.cart.append({
+                        "id": datetime.now().timestamp(),
+                        "name": f"🎁 {a_name} ({usage_a})",
+                        "price": ai['price'],
+                        "qty": qty_a,
+                        "is_activity": True,
+                        "packages": json.loads(ai['packages']),
+                        "is_store_use": True if usage_a == "在店使用" else False
+                    })
+                    st.rerun()
+            else:
+                st.info("当前没有开放的活动礼包")
+
     with col_b:
-        st.subheader("📋 结算清单")
+        st.subheader("📋 待结算清单")
         if not st.session_state.cart:
-            st.info("购物车是空的，请从左侧选购")
+            st.info("购物车是空的")
         else:
             total = 0
             for idx, item in enumerate(st.session_state.cart):
                 with st.container(border=True):
-                    # 第一行：名称与删除
-                    line1_1, line1_2 = st.columns([4, 1])
-                    line1_1.write(f"**{item['name']}**")
-                    if line1_2.button("🗑️", key=f"del_{item['id']}"):
+                    c1, c2, c3 = st.columns([3, 1.5, 1])
+                    c1.write(f"**{item['name']}**")
+                    subtotal = item['price'] * item['qty']
+                    total += subtotal
+                    c2.write(f"¥{subtotal}")
+                    
+                    # 只能整项删除
+                    if c3.button("🗑️", key=f"del_{item['id']}"):
                         st.session_state.cart.pop(idx)
                         st.rerun()
                     
-                    # 第二行：价格数量与存店开关
-                    line2_1, line2_2 = st.columns([1, 1])
-                    subtotal = item['price'] * item['qty']
-                    total += subtotal
-                    line2_1.write(f"¥{item['price']} x {item['qty']} = :red[¥{subtotal}]")
-                    item['is_store_use'] = line2_2.toggle("存店使用", value=item['is_store_use'], key=f"st_{item['id']}")
-                    
-                    # 如果是礼包，显示内容清单
+                    # 如果是礼包，折叠展示内容
                     if item.get('is_activity'):
-                        with st.expander("📝 礼包详细清单", expanded=False):
-                            for p_name, p_qty in item['packages'].items():
-                                st.caption(f"• {p_name} x {p_qty * item['qty']}")
+                        with st.expander("查看包含项目"):
+                            for p_n, p_q in item['packages'].items():
+                                st.caption(f"• {p_n} x {p_q * item['qty']}")
 
             st.divider()
             st.markdown(f"### 总金额：:red[¥{total:.2f}]")
-            
             method = st.radio("支付方式", ["现结", "余额扣款", "挂账"], horizontal=True)
             staff = st.selectbox("👤 经办人", staff_list)
 
-            if st.button("🚀 确认收银结算", type="primary", use_container_width=True):
+            if st.button("🚀 确认结算", type="primary", use_container_width=True):
                 if not sel_m:
-                    st.error("❌ 请先搜索并确认会员！")
+                    st.error("请先确认会员！")
                 elif method == "余额扣款" and sel_m['balance'] < total:
-                    st.error(f"❌ 余额不足！当前余额: ¥{sel_m['balance']}")
+                    st.error("余额不足！")
                 else:
                     cur = conn.cursor()
                     try:
                         today_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         
-                        # 1. 扣款/记账逻辑
+                        # 1. 扣款逻辑
                         if method == "余额扣款":
                             cur.execute("UPDATE members SET balance = balance - ? WHERE phone = ?", (total, sel_m['phone']))
                         elif method == "挂账":
                             cur.execute("UPDATE members SET debt = debt + ? WHERE phone = ?", (total, sel_m['phone']))
 
-                        # 2. 遍历购物车处理库存与资产
+                        # 2. 处理资产与库存
                         for i in st.session_state.cart:
-                            is_store = i.get('is_store_use', True)
+                            is_store = i['is_store_use']
                             
-                            # 情况 A：礼包
-                            if i.get('is_activity'):
+                            if i['is_activity']:
+                                # 礼包拆解
                                 for prod_n, prod_q in i['packages'].items():
-                                    total_physical = prod_q * i['qty']
-                                    # 扣库存
-                                    cur.execute("UPDATE products SET stock = MAX(0, stock - ?), last_updated = datetime('now','localtime') WHERE prod_name = ?", (total_physical, prod_n))
-                                    # 存资产
+                                    t_qty = prod_q * i['qty']
+                                    cur.execute("UPDATE products SET stock = MAX(0, stock - ?) WHERE prod_name = ?", (t_qty, prod_n))
                                     if is_store:
                                         res = pd.read_sql("SELECT category, unit FROM products WHERE prod_name=?", conn, params=(prod_n,))
-                                        p_spec = int(res.iloc[0, 0]) if not res.empty and str(res.iloc[0, 0]).isdigit() else 1
-                                        p_unit = res.iloc[0, 1] if not res.empty and res.iloc[0, 1] else "次"
-                                        actual_salon_q = total_physical * p_spec
-                                        cur.execute("INSERT INTO salon_items (member_phone, item_name, total_qty, used_qty, status, unit, buy_date) VALUES (?, ?, ?, 0, ?, ?, ?)",
-                                                    (sel_m['phone'], prod_n, actual_salon_q, "使用中", p_unit, today_str))
-                            
-                            # 情况 B：单品
+                                        spec = int(res.iloc[0,0]) if not res.empty and str(res.iloc[0,0]).isdigit() else 1
+                                        unit = res.iloc[0,1] if not res.empty else "次"
+                                        cur.execute("INSERT INTO salon_items (member_phone, item_name, total_qty, used_qty, status, unit, buy_date) VALUES (?,?,?,0,'使用中',?,?)",
+                                                    (sel_m['phone'], prod_n, t_qty * spec, unit, today_str))
                             else:
-                                # 扣库存
-                                cur.execute("UPDATE products SET stock = MAX(0, stock - ?), last_updated = datetime('now','localtime') WHERE prod_name = ?", (i['qty'], i['name']))
-                                # 存资产
+                                # 单品处理
+                                cur.execute("UPDATE products SET stock = MAX(0, stock - ?) WHERE prod_name = ?", (i['qty'], i['raw_name']))
                                 if is_store:
-                                    res = pd.read_sql("SELECT category, unit FROM products WHERE prod_name=?", conn, params=(i['name'],))
-                                    p_spec = int(res.iloc[0, 0]) if not res.empty and str(res.iloc[0, 0]).isdigit() else 1
-                                    p_unit = res.iloc[0, 1] if not res.empty and res.iloc[0, 1] else "次"
-                                    actual_salon_q = i['qty'] * p_spec
-                                    cur.execute("INSERT INTO salon_items (member_phone, item_name, total_qty, used_qty, status, unit, buy_date) VALUES (?, ?, ?, 0, ?, ?, ?)",
-                                                (sel_m['phone'], i['name'], actual_salon_q, "使用中", p_unit, today_str))
+                                    res = pd.read_sql("SELECT category, unit FROM products WHERE prod_name=?", conn, params=(i['raw_name'],))
+                                    spec = int(res.iloc[0,0]) if not res.empty and str(res.iloc[0,0]).isdigit() else 1
+                                    unit = res.iloc[0,1] if not res.empty else "次"
+                                    cur.execute("INSERT INTO salon_items (member_phone, item_name, total_qty, used_qty, status, unit, buy_date) VALUES (?,?,?,0,'使用中',?,?)",
+                                                (sel_m['phone'], i['raw_name'], i['qty'] * spec, unit, today_str))
 
                         # 3. 记录流水
-                        items_summary = ",".join([f"{item['name']}x{item['qty']}" for item in st.session_state.cart])
+                        desc = ",".join([i['name'] for i in st.session_state.cart])
                         cur.execute("INSERT INTO records (member_phone, date, items, total_amount, status, staff_name) VALUES (?, datetime('now','localtime'), ?, ?, ?, ?)",
-                                    (sel_m['phone'], items_summary, total, method, staff))
+                                    (sel_m['phone'], desc, total, method, staff))
                         
                         conn.commit()
                         st.balloons()
-                        st.success(f"🎉 结算成功！收款：¥{total:.2f}")
+                        st.success("结算成功！")
                         st.session_state.cart = []
-                        time.sleep(1.5)
+                        time.sleep(1.2)
                         st.rerun()
-
                     except Exception as e:
                         conn.rollback()
-                        st.error(f"结算失败: {e}")
+                        st.error(f"出错: {e}")
