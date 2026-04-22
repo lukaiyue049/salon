@@ -57,6 +57,7 @@ def show(data_bundle):
                 save_data("activities", pd.concat([acts_latest, new_act], ignore_index=True))
                 st.success(f"活动【{name}】已发布")
                 time.sleep(1)
+                st.cache_data.clear()
                 st.rerun()
 
     # ---------- 批量办理活动 ----------
@@ -113,6 +114,7 @@ def show(data_bundle):
                         save_data("records", df_r)
                     st.balloons()
                     st.success(f"已为 {len(targs)} 位会员办理活动")
+                    st.cache_data.clear()
                     st.rerun()
 
     # ---------- 活动管理 ----------
@@ -130,10 +132,12 @@ def show(data_bundle):
                     if c1.button("切换状态", key=f"sw_{row['id']}"):
                         df_display.at[idx, 'is_open'] = 0 if int(row['is_open']) == 1 else 1
                         save_data("activities", df_display)
+                        st.cache_data.clear()
                         st.rerun()
                     if c2.button("🗑️ 删除", key=f"del_{row['id']}"):
                         df_display = df_display.drop(idx)
                         save_data("activities", df_display)
+                        st.cache_data.clear()
                         st.rerun()
             st.divider()
             st.subheader("📈 活动参与详情")
