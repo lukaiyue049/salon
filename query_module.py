@@ -321,6 +321,37 @@ def show_member_management():
 
                         # --- 板块 A：当前剩余资产 ---
                         with tab_active:
+                            # 1. 新增：手动登记存店功能 (放在最上方，方便阿姨操作)
+                            with st.expander("➕ 登记产品存店 (顾客带回或礼包拆分)"):
+                                # 获取所有产品信息用于选择
+                                all_prods_df = pd.read_sql("SELECT prod_name, unit, type FROM products", conn)
+                                
+                                c1, c2, c3 = st.columns([2, 1, 1])
+                                with c1:
+                                    add_name = st.selectbox("选择存店产品", all_prods_df['prod_name'].tolist(), key=f"manual_add_name_{row['phone']}")
+                                with c2:
+                                    add_qty = st.number_input("数量", min_value=1, step=1, value=1, key=f"manual_add_qty_{row['phone']}")
+                                
+                                if c3.button("确认存店", type="primary", use_container_width=True, key=f"manual_add_btn_{row['phone']}"):
+                                    # 获取选中产品的单位
+                                    selected_prod = all_prods_df[all_prods_df['prod_name'] == add_name].iloc[0]
+                                    u_val = selected_prod['unit'] if selected_prod['unit'] else "个"
+                                    
+                                    # 执行插入资产表逻辑
+                                    conn.execute(
+                                        """INSERT INTO salon_items 
+                                           (member_phone, item_name, total_qty, used_qty, status, unit, buy_date) 
+                                           VALUES (?, ?, ?, 0, '使用中', ?, datetime('now','localtime'))""",
+                                        (row['phone'], add_name, add_qty, u_val)
+                                    )
+                                    conn.commit()
+                                    st.toast(f"✅ 已成功为会员存入 {add_qty} {u_val} {add_name}", icon="📦")
+                                    time.sleep(1)
+                                    st.rerun()
+                        
+                            st.divider() # 分割线
+                        
+                            # 2. 原有的资产显示逻辑
                             active_df = all_items[all_items['status'] == '使用中']
                             if active_df.empty:
                                 st.caption("暂无可用资产")
@@ -335,13 +366,14 @@ def show_member_management():
                                                 left, right = st.columns([3, 1])
                                                 remains = it['total_qty'] - it['used_qty']
                                                 u = it['unit'] if it['unit'] else "次"
-
+                        
                                                 left.write(
                                                     f"**{it['item_name']}** (余 {remains} {u} / 总 {it['total_qty']} {u})")
                                                 left.caption(f"📅 最新购入: {it['last_buy_date']}")
-
-                                                if right.button(f"核销 1 {u}",
-                                                                key=f"use_act_{row['phone']}_{it['item_name']}"):
+                        
+                                                # 核销按钮
+                                                if right.button(f"核销 1 {u}", 
+                                                               key=f"use_act_{row['phone']}_{it['item_name']}"):
                                                     # 这里的核销逻辑保持之前的先进先出(ORDER BY id ASC)
                                                     target = pd.read_sql(
                                                         "SELECT id, used_qty, total_qty FROM salon_items WHERE member_phone=? AND item_name=? AND status='使用中' ORDER BY id ASC LIMIT 1",
@@ -349,31 +381,41 @@ def show_member_management():
                                                     )
                                                     if not target.empty:
                                                         tid, u_qty, t_qty = target.iloc[0]
-                                                        new_u, new_s = u_qty + 1, (
-                                                            "已用完" if u_qty + 1 >= t_qty else "使用中")
-                                                        conn.execute(
+                                                        new_u = u_qty + 1
+                                                        new_s = "已用完" if new_u >= t_qty else "使用中"
+                                                        
+                                                        cur = conn.cursor()
+                                                        # 更新资产状态
+                                                        cur.execute(
                                                             "UPDATE salon_items SET used_qty=?, status=? WHERE id=?",
                                                             (new_u, new_s, tid))
-                                                        conn.execute(
+                                                        
+                                                        # 联动：如果是实物产品，核销通常意味着消耗掉店里的库存
+                                                        # 如果是服务项目，则不影响 products 物理库存（根据你的业务逻辑决定是否保留下面这行）
+                                                        cur.execute(
                                                             "UPDATE products SET stock = MAX(0, stock - 1) WHERE prod_name = ?",
                                                             (it['item_name'],))
-                                                        conn.execute(
+                                                        
+                                                        # 记录核销流水
+                                                        cur.execute(
                                                             "INSERT INTO records (member_phone, date, items, total_amount, status, staff_name) VALUES (?, datetime('now','localtime'), ?, 0, '次卡核销', '店长')",
                                                             (row['phone'], f"使用:{it['item_name']}"))
+                                                        
                                                         conn.commit()
+                                                        st.toast(f"✅ {it['item_name']} 核销成功", icon="📝")
+                                                        time.sleep(0.5)
                                                         st.rerun()
-
-                        # --- 板块 B：已核销/历史 ---
-                        with tab_history:
-                            history_df = all_items[all_items['status'] == '已用完']
-                            if history_df.empty:
-                                st.caption("暂无历史核销记录")
-                            else:
-                                # 历史记录通常只需要简单列表展示
-                                for _, it in history_df.iterrows():
-                                    u = it['unit'] if it['unit'] else "次"
-                                    st.text(f"⚪ {it['item_name']} - 已全部核销 (共 {it['total_qty']} {u})")
-                                    st.caption(f"最后一次购入时间: {it['last_buy_date']}")
+                            # --- 板块 B：已核销/历史 ---
+                            with tab_history:
+                                history_df = all_items[all_items['status'] == '已用完']
+                                if history_df.empty:
+                                    st.caption("暂无历史核销记录")
+                                else:
+                                    # 历史记录通常只需要简单列表展示
+                                    for _, it in history_df.iterrows():
+                                        u = it['unit'] if it['unit'] else "次"
+                                        st.text(f"⚪ {it['item_name']} - 已全部核销 (共 {it['total_qty']} {u})")
+                                        st.caption(f"最后一次购入时间: {it['last_buy_date']}")
 
                 with t4:
                     history = pd.read_sql(
