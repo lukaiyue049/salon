@@ -1,14 +1,12 @@
 import streamlit as st
 from streamlit_option_menu import option_menu
-import pandas as pd
 from db_manager import init_db, read_data, save_data
 
 st.set_page_config(page_title="929皮肤管理中心", page_icon="✨", layout="wide")
 init_db()
 
-
-# ---------- 全局数据缓存（5分钟有效）----------
-@st.cache_data(ttl=300)
+# ---------- 全局数据缓存（10分钟，避免频繁请求）----------
+@st.cache_data(ttl=600)
 def load_all_data():
     return {
         "products": read_data("products"),
@@ -20,8 +18,7 @@ def load_all_data():
         "salon_items": read_data("salon_items"),
     }
 
-
-# 导入模块（重构后）
+# 导入模块
 from modules import pos, member, product, activity, finance, settings
 
 # ---------- CSS 样式 ----------
@@ -48,7 +45,7 @@ div[role="radiogroup"] label[data-state="checked"] {
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- 侧边栏导航 ----------
+# ---------- 侧边栏 ----------
 with st.sidebar:
     st.markdown("""
         <div style="text-align: center; padding: 25px 10px; margin-bottom: 25px;
@@ -57,7 +54,7 @@ with st.sidebar:
             <h2 style="color: #8d6e63;">✨ 929 美容中心</h2>
         </div>
     """, unsafe_allow_html=True)
-
+    
     selected = option_menu(
         menu_title=None,
         options=["消费收银", "会员管理", "项目库存", "营销活动", "财务报表", "系统设置"],
@@ -74,9 +71,10 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-# ---------- 路由：每个模块接收 data_bundle ----------
+# ---------- 加载数据 ----------
 data_bundle = load_all_data()
 
+# ---------- 路由 ----------
 if selected == "消费收银":
     pos.show(data_bundle)
 elif selected == "会员管理":
