@@ -68,6 +68,12 @@ st.markdown("""
         gap: 4px !important;
         white-space: nowrap !important;  /* 防止文字换行 */
     }
+    /* 针对只有图标没有文字的按钮（如垃圾桶） */
+    .stButton button:has(span:only-child) {
+        width: 48px !important;
+        min-width: 48px !important;
+        padding: 0 !important;
+    }
     .stButton>button:hover {
         background-color: #A6866D !important;
     }
