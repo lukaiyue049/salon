@@ -2,16 +2,15 @@ import streamlit as st
 import pandas as pd
 import json
 import time
-from db_manager import get_conn
-
+from datetime import datetime
+# 引入新定义的云端管理函数
+from db_manager import read_data, save_data
 
 def show_activity_center():
     st.header("🎯 活动礼包")
-    conn = get_conn()
+    
+    # 获取初始连接和数据
     t1, t2, t3 = st.tabs(["设置活动礼包", "批量办理活动", "活动列表管理"])
-
-    # --- t1: 设置活动礼包 ---
-    # activity_module.py
 
     # --- t1: 设置活动礼包 ---
     with t1:
@@ -20,30 +19,23 @@ def show_activity_center():
         n = col_n.text_input("活动名称", placeholder="如：焕颜补水套装")
         p = col_p.number_input("礼包总价格", min_value=0.0)
 
-        # --- 【新增：分类选择布局】 ---
+        # 分类选择布局
         cat_col, search_col = st.columns([1, 2])
+        full_products_df = read_data("products") # 从云端读取产品全表
+        
         with cat_col:
-            # 添加内容类型下拉框
             gift_cat = st.selectbox("内容类型", ["全部", "实物产品", "服务项目"], key="gift_cat_filter")
 
         with search_col:
-            # 根据类型查询数据库
+            # 使用 Pandas 过滤代替 SQL WHERE
             if gift_cat == "全部":
-                prods_df = pd.read_sql("SELECT prod_name, unit, type FROM products", conn)
+                prods_df = full_products_df
             else:
-                prods_df = pd.read_sql("SELECT prod_name, unit, type FROM products WHERE type=?", conn,
-                                       params=(gift_cat,))
+                prods_df = full_products_df[full_products_df['type'] == gift_cat]
 
-            # 构造带前缀的列表
             prod_list = [f"[{row['type']}] {row['prod_name']}" for _, row in prods_df.iterrows()]
-
-            # 【重要】为了防止切换分类时已选中的项丢失，unit_map 需要包含所有产品
-            full_df = pd.read_sql("SELECT prod_name, unit, type FROM products", conn)
-            unit_map = {f"[{row['type']}] {row['prod_name']}": row['unit'] for _, row in full_df.iterrows()}
-
-            # 搜索框
+            unit_map = {f"[{row['type']}] {row['prod_name']}": row['unit'] for _, row in full_products_df.iterrows()}
             sel = st.multiselect("选择内含产品/服务", prod_list)
-        # ----------------------------
 
         extra = st.text_input("➕ 自定义福利 (如：赠送头部按摩)", placeholder="不填则不加")
 
@@ -51,22 +43,27 @@ def show_activity_center():
         if sel or extra:
             st.write("--- 设定数量 ---")
             all_to_show = sel + ([extra] if extra else [])
-            # 设定每行最多显示 4 个项目，防止列数过多导致排版混乱
             cols = st.columns(4)
             for idx, it in enumerate(all_to_show):
                 u = unit_map.get(it, "次")
-                # 使用取模运算循环分配到 4 列中
                 counts[it] = cols[idx % 4].number_input(f"{it}({u})", 1, 100, 1, key=f"act_{it}")
 
-        note = st.text_area("📝 活动备注", placeholder="在此填写活动规则、有效期等...")
+        note = st.text_area("📝 活动备注", placeholder="在此填写活动规则等...")
 
         if st.button("🚀 立即发布活动", type="primary", use_container_width=True):
             if n and counts:
-                pkg_json = json.dumps(counts, ensure_ascii=False)
-                conn.execute("INSERT INTO activities (name, packages, price, is_open, note) VALUES (?,?,?,1,?)",
-                             (n, pkg_json, p, note))
-                conn.commit()
-
+                df_acts = read_data("activities")
+                new_act = pd.DataFrame([{
+                    "id": int(time.time()), # 简易唯一ID
+                    "name": n,
+                    "packages": json.dumps(counts, ensure_ascii=False),
+                    "price": p,
+                    "is_open": 1,
+                    "note": note
+                }])
+                df_acts = pd.concat([df_acts, new_act], ignore_index=True)
+                save_data("activities", df_acts) # 同步云端
+                
                 st.toast(f"✅ 活动【{n}】已成功发布！", icon="🎁")
                 time.sleep(1.5)
                 st.rerun()
@@ -74,26 +71,22 @@ def show_activity_center():
     # --- t2: 批量办理活动 ---
     with t2:
         st.info("注意：批量办理仅支持现金/转账扣款（现结），将自动生成财务流水")
-        acts = pd.read_sql("SELECT * FROM activities WHERE is_open=1", conn)
+        all_acts = read_data("activities")
+        acts = all_acts[all_acts['is_open'] == 1]
         
         if not acts.empty:
             sel_act = st.selectbox("选择活动", acts['name'].tolist())
             ad = acts[acts['name'] == sel_act].iloc[0]
             pkg = json.loads(ad['packages'])
             
-            # 获取会员数据
-            ms = pd.read_sql("SELECT phone, name FROM members", conn)
-            
-            # 搜索框：现在可以输入姓名或手机号进行过滤了
-            # 2. 修改 format_func，将完整手机号 x 转换为后四位显示
+            ms = read_data("members")
             targs = st.multiselect(
-                "选择办理会员 (支持姓名或手机号搜索)", 
+                "选择办理会员", 
                 options=ms['phone'].tolist(),
-                format_func=lambda x: f"{ms[ms['phone'] == x]['name'].values[0]} ({str(x)[-4:]})",
-                placeholder="🔍 输入姓名或手机号搜索..."
+                format_func=lambda x: f"{ms[ms['phone'] == x]['name'].values[0]} ({str(x)[-4:]})"
             )
             
-            staff_df = pd.read_sql("SELECT name FROM staffs", conn)
+            staff_df = read_data("staffs")
             staff_list = staff_df['name'].tolist() if not staff_df.empty else ["店长"]
             staff = st.selectbox("经办人", staff_list)
 
@@ -101,140 +94,76 @@ def show_activity_center():
                 if not targs:
                     st.warning("请至少选择一个会员")
                 else:
-                    cur = conn.cursor()
+                    # 一次性读取涉及的所有表
+                    df_p = read_data("products")
+                    df_si = read_data("salon_items")
+                    df_r = read_data("records")
+                    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
                     for p_phone in targs:
-                        # 遍历礼包内的每个项目
                         for it_name, it_qty in pkg.items():
-                            # 1. 扣减产品库存
-                            cur.execute("UPDATE products SET stock = MAX(0, stock - ?), last_updated = datetime('now','localtime') WHERE prod_name = ?", (it_qty, it_name))
+                            # 1. 扣库存
+                            df_p.loc[df_p['prod_name'] == it_name, 'stock'] -= it_qty
+                            df_p.loc[df_p['prod_name'] == it_name, 'last_updated'] = now
                             
-                            # 2. 获取产品单位 (unit)，如果没找到默认用'次'
-                            u_res = pd.read_sql("SELECT unit FROM products WHERE prod_name=?", conn, params=(it_name,))
-                            unit = u_res.iloc[0]['unit'] if not u_res.empty else "次"
-                            
-                            # 3. 写入会员资产 (关键修改：增加 used_qty=0 和 buy_date)
-                            cur.execute(
-                                "INSERT INTO salon_items (member_phone, item_name, total_qty, used_qty, status, unit, buy_date) VALUES (?,?,?,0,?,?,datetime('now','localtime'))",
-                                (p_phone, it_name, it_qty, "使用中", unit))
+                            # 2. 获取单位并增加资产
+                            u_val = df_p[df_p['prod_name'] == it_name]['unit'].values[0] if it_name in df_p['prod_name'].values else "次"
+                            new_si = pd.DataFrame([{
+                                "member_phone": p_phone, "item_name": it_name, "total_qty": it_qty,
+                                "used_qty": 0, "status": "使用中", "unit": u_val, "buy_date": now
+                            }])
+                            df_si = pd.concat([df_si, new_si], ignore_index=True)
                         
-                        # 4. 生成财务记录
-                        cur.execute(
-                            "INSERT INTO records (member_phone, date, items, total_amount, status, staff_name) VALUES (?, datetime('now','localtime'), ?, ?, '现结', ?)",
-                            (p_phone, f"批量办理活动:{sel_act}", ad['price'], staff))
-                    
-                    conn.commit()
-                    st.toast(f"✅ 已成功为 {len(targs)} 位会员办理活动！", icon="🎊")
+                        # 3. 记录流水
+                        new_rec = pd.DataFrame([{
+                            "member_phone": p_phone, "date": now, "items": f"活动:{sel_act}",
+                            "total_amount": ad['price'], "status": "现结", "staff_name": staff
+                        }])
+                        df_r = pd.concat([df_r, new_rec], ignore_index=True)
+
+                    # 统一写回云端
+                    save_data("products", df_p)
+                    save_data("salon_items", df_si)
+                    save_data("records", df_r)
+
+                    st.toast(f"✅ 办理完成！", icon="🎊")
                     time.sleep(1.5)
                     st.rerun()
-        else:
-            st.warning("当前没有开启中的活动，请先在'设置活动礼包'中发布。")
 
-    # --- t3: 活动列表管理 (包含实时详情) ---
+    # --- t3: 活动管理与统计 ---
     with t3:
-        st.subheader("📋 已发布活动管理")
-        df_acts = pd.read_sql("SELECT * FROM activities", conn)
-
+        df_acts = read_data("activities")
         if df_acts.empty:
             st.info("暂无活动记录。")
         else:
-            # 1. 列表展示与操作
-            for _, row in df_acts.iterrows():
+            for idx, row in df_acts.iterrows():
                 status_icon = "🟢" if row['is_open'] == 1 else "⚪"
                 with st.expander(f"{status_icon} {row['name']} | 价格: ¥{row['price']}"):
-                    if row.get('note'):
-                        st.info(f"📝 **活动备注/福利：**\n\n{row['note']}")
-
-                    st.write("**🎁 礼包内容：**")
-                    pkg_data = json.loads(row['packages'])
-                    if pkg_data:
-                        prods_df = pd.read_sql("SELECT prod_name, unit FROM products", conn)
-                        unit_map = dict(zip(prods_df.prod_name, prods_df.unit))
-                        it_cols = st.columns(4)
-                        for i, (name, count) in enumerate(pkg_data.items()):
-                            u = unit_map.get(name, "次")
-                            with it_cols[i % 4]:
-                                st.info(f"**{name}**\n\n{count}{u}")
-
-                    st.write("---")
-                    c_btn1, c_btn2 = st.columns(2)
-                    btn_txt = "停用该活动" if row['is_open'] else "启用该活动"
-                    if c_btn1.button(btn_txt, key=f"btn_sw_{row['id']}", use_container_width=True):
-                        new_stat = 0 if row['is_open'] == 1 else 1
-                        conn.execute("UPDATE activities SET is_open=? WHERE id=?", (new_stat, row['id']))
-                        conn.commit()
+                    st.write(f"📝 备注: {row['note']}")
+                    # 启用/停用逻辑
+                    if st.button("切换状态", key=f"sw_{row['id']}"):
+                        df_acts.at[idx, 'is_open'] = 0 if row['is_open'] == 1 else 1
+                        save_data("activities", df_acts)
+                        st.rerun()
+                    if st.button("🗑️ 删除", key=f"del_{row['id']}"):
+                        df_acts = df_acts.drop(idx)
+                        save_data("activities", df_acts)
                         st.rerun()
 
-                    if c_btn2.button("🗑️ 删除活动", key=f"btn_del_{row['id']}", type="secondary",
-                                     use_container_width=True):
-                        conn.execute("DELETE FROM activities WHERE id=?", (row['id'],))
-                        conn.commit()
-                        st.rerun()
-"""""
-            # 2. 活动详情统计部分 (现在放在 t3 底部)
+            # 统计部分：使用 Pandas 聚合替代复杂的 SQL JOIN
             st.divider()
             st.subheader("📈 活动参与详情")
-
-            stats_sql = """"""
-            stats_df = pd.read_sql(stats_sql, conn)
-
-            col_summary, col_select = st.columns([1, 1])
-            with col_summary:
+            df_records = read_data("records")
+            # 过滤出活动相关的记录
+            act_records = df_records[df_records['items'].str.contains("活动:", na=False)].copy()
+            
+            if not act_records.empty:
+                # 提取活动名称并统计
+                act_records['活动名称'] = act_records['items'].str.replace("活动:", "")
+                stats_df = act_records.groupby('活动名称').agg(
+                    参与人数=('member_phone', 'nunique'),
+                    总收入=('total_amount', 'sum')
+                ).reset_index()
                 st.dataframe(stats_df, use_container_width=True, hide_index=True)
-
-            with col_select:
-                sel_stat = st.selectbox("🎯 选择活动查看参与名单", ["请选择活动..."] + stats_df['活动名称'].tolist())
-
-            if sel_stat != "请选择活动...":
-                st.write(f"👥 **{sel_stat}** 的参与名单 (点击行查看资料卡)")
-                members_sql = """"""
-                detailed_members_df = pd.read_sql(members_sql, conn, params=(f'%{sel_stat}%',))
-
-                if not detailed_members_df.empty:
-                    display_df = detailed_members_df[['姓名', '手机号', '购买日期', '支付金额']]
-                    selection = st.dataframe(display_df, use_container_width=True, hide_index=True, on_select="rerun",
-                                             selection_mode="single-row")
-
-                    if selection.selection.rows:
-                        idx = selection.selection.rows[0]
-                        m_info = detailed_members_df.iloc[idx]
-                        sel_phone = m_info['手机号']
-
-                        st.markdown(f"#### 🛍️ 会员持有产品卡：{m_info['姓名']}")
-
-                        # 【核心增加】：查询该用户的所有非核销购买记录，解析出持有产品
-                        # 逻辑：查询该手机号的所有流水，排除“使用/核销”字样
-                        holdings_sql = """"""
-                        df_holdings = pd.read_sql(holdings_sql, conn, params=(sel_phone,))
-
-                        with st.container(border=True):
-                            c1, c2 = st.columns([1, 2])
-                            with c1:
-                                st.write("**👤 客户概览**")
-                                st.write(f"**姓名:** {m_info['姓名']}")
-                                st.write(f"**手机:** {sel_phone}")
-                                st.write(f"**累计订单:** {len(df_holdings)} 单")
-                                # 保持原有的备注信息显示
-                                st.write("**备注:**")
-                                st.caption(m_info['备注信息'] if m_info['备注信息'] else "暂无备注")
-
-                            with c2:
-                                st.write("**📦 已购产品/服务清单**")
-                                if df_holdings.empty:
-                                    st.caption("暂无购买记录")
-                                else:
-                                    # 格式化日期和金额显示
-                                    df_holdings['date'] = pd.to_datetime(df_holdings['date']).dt.strftime('%Y-%m-%d')
-                                    st.dataframe(
-                                        df_holdings,
-                                        column_config={
-                                            "date": "购买日期",
-                                            "items": "项目名称",
-                                            "total_amount": st.column_config.NumberColumn("支付金额", format="¥%.2f"),
-                                            "status": "支付方式"
-                                        },
-                                        hide_index=True,
-                                        use_container_width=True
-                                    )
-                else:
-                    st.info("该活动暂无购买记录。")
-                                            """
+            else:
+                st.caption("暂无活动参与数据。")
