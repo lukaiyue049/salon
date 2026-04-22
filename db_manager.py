@@ -41,8 +41,6 @@ def init_db():
     云端模式下，无需执行 CREATE TABLE。
     它的作用变为：检查表格标题行是否齐全（尤其是你之前报错过的 note 字段）。
     """
-    st.info("正在同步云端数据库配置...")
-    
     # 检查会员表关键列
     members_df = read_data("members")
     required_cols = ['phone', 'name', 'balance', 'skin_info', 'debt', 'note', 'reg_date']
@@ -50,8 +48,7 @@ def init_db():
     missing = [c for c in required_cols if c not in members_df.columns]
     if missing:
         st.warning(f"云端表格缺少以下列，请手动在 Google 表格首行补齐: {missing}")
-    else:
-        st.success("✅ 云端数据库连接成功！")
+    
 
 # --- 升级/维护逻辑 ---
 def upgrade_db(conn=None):
