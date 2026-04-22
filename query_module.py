@@ -295,170 +295,85 @@ def show_member_management():
                                 st.success("当前无欠款，信用良好！")
 
                 with t3:
-                    st.markdown("### 📦 会员资产管理")
-                    
-                    # 查询所有资产（包含来源和活动信息）
+                    # 1. 查询所有资产（包含使用中和已用完），关联 products 表获取类型(type)
+                    # 同时通过 MAX(buy_date) 获取最新日期，SUM 统计总量
                     items_query = """
                         SELECT 
-                            s.id,
                             s.item_name, 
-                            s.total_qty, 
-                            s.used_qty,
-                            s.buy_date,
+                            SUM(s.total_qty) as total_qty, 
+                            SUM(s.used_qty) as used_qty,
+                            MAX(s.buy_date) as last_buy_date,
+                            s.unit,
                             s.status,
-                            s.source,
-                            s.activity_name,
-                            s.usage_type,
-                            p.unit
+                            p.type as item_type
                         FROM salon_items s
                         LEFT JOIN products p ON s.item_name = p.prod_name
                         WHERE s.member_phone=?
-                        ORDER BY s.buy_date DESC
+                        GROUP BY s.item_name, s.unit, s.status
                     """
                     all_items = pd.read_sql(items_query, conn, params=(row['phone'],))
-                    
+
                     if all_items.empty:
                         st.info("暂无持有资产记录")
                     else:
-                        # 二级分类 Tab
-                        sub_tab1, sub_tab2, sub_tab3 = st.tabs(["📋 全部购入", "🏠 在店使用", "📜 核销历史"])
-                        
-                        # ========== Tab 1: 全部购入 ==========
-                        with sub_tab1:
-                            # 只显示使用中的（未核销完的）
-                            active_items = all_items[all_items['status'] == '使用中']
-                            
-                            if active_items.empty:
-                                st.caption("暂无进行中的资产")
+                        # 分为两个大的逻辑板块：剩余资产 vs 历史资产
+                        tab_active, tab_history = st.tabs(["✨ 当前剩余资产", "📔 已核销/历史"])
+
+                        # --- 板块 A：当前剩余资产 ---
+                        with tab_active:
+                            active_df = all_items[all_items['status'] == '使用中']
+                            if active_df.empty:
+                                st.caption("暂无可用资产")
                             else:
-                                # 按活动名称分组显示
-                                # 先分离活动产品和非活动产品
-                                activity_items = active_items[active_items['source'] == 'activity']
-                                normal_items = active_items[active_items['source'] != 'activity']
-                                
-                                # 显示普通购买的产品
-                                if not normal_items.empty:
-                                    st.markdown("**🛍️ 常规购买**")
-                                    for _, it in normal_items.iterrows():
-                                        remains = it['total_qty'] - it['used_qty']
-                                        unit = it['unit'] if it['unit'] else "次"
-                                        
-                                        col1, col2, col3 = st.columns([3, 1, 1])
-                                        with col1:
-                                            st.write(f"📦 {it['item_name']}")
-                                            st.caption(f"剩余 {remains}/{it['total_qty']} {unit}")
-                                        with col2:
-                                            st.caption(f"购入: {it['buy_date'][:10] if it['buy_date'] else '未知'}")
-                                        with col3:
-                                            if remains > 0:
-                                                if st.button(f"核销 1", key=f"use_norm_{it['id']}"):
-                                                    # 核销逻辑
+                                # 内部细分为：服务项目 与 实物产品
+                                for it_type in ["服务项目", "实物产品"]:
+                                    type_df = active_df[active_df['item_type'] == it_type]
+                                    if not type_df.empty:
+                                        st.markdown(f"**【{it_type}】**")
+                                        for _, it in type_df.iterrows():
+                                            with st.container(border=True):
+                                                left, right = st.columns([3, 1])
+                                                remains = it['total_qty'] - it['used_qty']
+                                                u = it['unit'] if it['unit'] else "次"
+
+                                                left.write(
+                                                    f"**{it['item_name']}** (余 {remains} {u} / 总 {it['total_qty']} {u})")
+                                                left.caption(f"📅 最新购入: {it['last_buy_date']}")
+
+                                                if right.button(f"核销 1 {u}",
+                                                                key=f"use_act_{row['phone']}_{it['item_name']}"):
+                                                    # 这里的核销逻辑保持之前的先进先出(ORDER BY id ASC)
                                                     target = pd.read_sql(
-                                                        "SELECT id, used_qty, total_qty FROM salon_items WHERE id=?",
-                                                        conn, params=(it['id'],)
+                                                        "SELECT id, used_qty, total_qty FROM salon_items WHERE member_phone=? AND item_name=? AND status='使用中' ORDER BY id ASC LIMIT 1",
+                                                        conn, params=(row['phone'], it['item_name'])
                                                     )
                                                     if not target.empty:
                                                         tid, u_qty, t_qty = target.iloc[0]
-                                                        new_u, new_s = u_qty + 1, ("已用完" if u_qty + 1 >= t_qty else "使用中")
+                                                        new_u, new_s = u_qty + 1, (
+                                                            "已用完" if u_qty + 1 >= t_qty else "使用中")
                                                         conn.execute(
                                                             "UPDATE salon_items SET used_qty=?, status=? WHERE id=?",
                                                             (new_u, new_s, tid))
+                                                        conn.execute(
+                                                            "UPDATE products SET stock = MAX(0, stock - 1) WHERE prod_name = ?",
+                                                            (it['item_name'],))
                                                         conn.execute(
                                                             "INSERT INTO records (member_phone, date, items, total_amount, status, staff_name) VALUES (?, datetime('now','localtime'), ?, 0, '次卡核销', '店长')",
                                                             (row['phone'], f"使用:{it['item_name']}"))
                                                         conn.commit()
                                                         st.rerun()
-                                        st.divider()
-                                
-                                # 按活动分组显示活动产品
-                                if not activity_items.empty:
-                                    st.markdown("**🎁 活动礼包产品**")
-                                    # 按活动名称分组
-                                    grouped = activity_items.groupby('activity_name')
-                                    for act_name, group in grouped:
-                                        with st.expander(f"🎉 {act_name}"):
-                                            for _, it in group.iterrows():
-                                                remains = it['total_qty'] - it['used_qty']
-                                                unit = it['unit'] if it['unit'] else "次"
-                                                
-                                                col1, col2, col3 = st.columns([3, 1, 1])
-                                                with col1:
-                                                    st.write(f"📦 {it['item_name']}")
-                                                    st.caption(f"剩余 {remains}/{it['total_qty']} {unit}")
-                                                with col2:
-                                                    st.caption(f"购入: {it['buy_date'][:10] if it['buy_date'] else '未知'}")
-                                                with col3:
-                                                    if remains > 0 and it['usage_type'] != 'takeaway':
-                                                        if st.button(f"核销", key=f"use_act_{it['id']}"):
-                                                            # 核销逻辑同上
-                                                            target = pd.read_sql(
-                                                                "SELECT id, used_qty, total_qty FROM salon_items WHERE id=?",
-                                                                conn, params=(it['id'],)
-                                                            )
-                                                            if not target.empty:
-                                                                tid, u_qty, t_qty = target.iloc[0]
-                                                                new_u, new_s = u_qty + 1, ("已用完" if u_qty + 1 >= t_qty else "使用中")
-                                                                conn.execute(
-                                                                    "UPDATE salon_items SET used_qty=?, status=? WHERE id=?",
-                                                                    (new_u, new_s, tid))
-                                                                conn.commit()
-                                                                st.rerun()
-                                                st.divider()
-                        
-                        # ========== Tab 2: 在店使用 ==========
-                        with sub_tab2:
-                            # 筛选：usage_type = 'store' 或 source = 'activity' 且是店用模式
-                            shop_items = all_items[
-                                (all_items['usage_type'] == 'store') | 
-                                ((all_items['source'] == 'activity') & (all_items['usage_type'].isna()))
-                            ]
-                            shop_items = shop_items[shop_items['status'] == '使用中']
-                            
-                            if shop_items.empty:
-                                st.caption("暂无店内存放的产品")
+
+                        # --- 板块 B：已核销/历史 ---
+                        with tab_history:
+                            history_df = all_items[all_items['status'] == '已用完']
+                            if history_df.empty:
+                                st.caption("暂无历史核销记录")
                             else:
-                                # 按活动分组
-                                grouped_shop = shop_items.groupby('activity_name')
-                                for act_name, group in grouped_shop:
-                                    with st.expander(f"🏠 {act_name}（店内存放）"):
-                                        for _, it in group.iterrows():
-                                            remains = it['total_qty'] - it['used_qty']
-                                            unit = it['unit'] if it['unit'] else "次"
-                                            
-                                            col1, col2, col3 = st.columns([3, 1, 1])
-                                            with col1:
-                                                st.write(f"📦 {it['item_name']}")
-                                                st.caption(f"剩余 {remains}/{it['total_qty']} {unit}")
-                                            with col2:
-                                                st.caption(f"存放日期: {it['buy_date'][:10] if it['buy_date'] else '未知'}")
-                                            with col3:
-                                                # 提供"领取/带走"按钮
-                                                if st.button(f"✅ 确认领取", key=f"take_{it['id']}"):
-                                                    # 从店内存放中移除（标记为已领取或删除）
-                                                    conn.execute("DELETE FROM salon_items WHERE id=?", (it['id'],))
-                                                    conn.commit()
-                                                    st.success(f"已确认领取：{it['item_name']}")
-                                                    st.rerun()
-                                            st.divider()
-                        
-                        # ========== Tab 3: 核销历史 ==========
-                        with sub_tab3:
-                            history_items = all_items[all_items['status'] == '已用完']
-                            
-                            if history_items.empty:
-                                st.caption("暂无核销历史记录")
-                            else:
-                                for _, it in history_items.iterrows():
-                                    unit = it['unit'] if it['unit'] else "次"
-                                    
-                                    with st.container(border=True):
-                                        col1, col2 = st.columns([3, 1])
-                                        with col1:
-                                            prefix = "🎁" if it['source'] == 'activity' else "📦"
-                                            st.write(f"{prefix} {it['item_name']}")
-                                            st.caption(f"已全部核销（共 {it['total_qty']} {unit}）")
-                                        with col2:
-                                            st.caption(f"核销完成: {it['buy_date'][:10] if it['buy_date'] else '未知'}")
+                                # 历史记录通常只需要简单列表展示
+                                for _, it in history_df.iterrows():
+                                    u = it['unit'] if it['unit'] else "次"
+                                    st.text(f"⚪ {it['item_name']} - 已全部核销 (共 {it['total_qty']} {u})")
+                                    st.caption(f"最后一次购入时间: {it['last_buy_date']}")
 
                 with t4:
                     history = pd.read_sql(
