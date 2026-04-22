@@ -68,7 +68,6 @@ def show_activity_center():
                 conn.commit()
 
                 st.toast(f"✅ 活动【{n}】已成功发布！", icon="🎁")
-                import time
                 time.sleep(1.5)
                 st.rerun()
 
