@@ -74,7 +74,6 @@ def save_data(table_name, df):
         for col in write_df.columns:
             write_df[col] = write_df[col].apply(lambda x: "" if pd.isna(x) else str(x))
         conn.update(worksheet=table_name, data=write_df)
-        # 注意：不清除全局缓存，留给用户手动刷新或等待自然过期
         st.toast(f"✅ 云端 {table_name} 更新成功")
     except Exception as e:
         st.error(f"❌ 同步云端失败: {e}")
