@@ -28,29 +28,28 @@ def show_member_management():
     # 找到顶部操作栏部分并替换
     # --- 1. 重新定义顶部操作栏 (由 2 列改为 4 列) ---
     # --- 1. 重新定义顶部操作栏 (4列布局：搜索、状态开关、注册按钮、批量按钮) ---
-    col_search, col_debt, col_reg, col_batch, col_batch_mode = st.columns([1.5, 0.5, 0.8, 0.8, 0.8])
+    # 第一行：搜索框 + 只看超额开关
+row1_col1, row1_col2 = st.columns([3, 1])
+with row1_col1:
+    search = st.text_input("搜索", placeholder="🔍 姓名/手机号", label_visibility="collapsed")
+with row1_col2:
+    only_debt = st.toggle("🚨 只看超额", value=False)
 
-    with col_search:
-        search = st.text_input("搜索", placeholder="🔍 输入姓名或手机号...", label_visibility="collapsed")
-
-    with col_debt:
-        only_debt = st.toggle("🚨 只看超额", value=False)
-
-    with col_reg:
-        # 只要点击按钮，就直接弹出窗口，不需要通过 session_state 控制
-        if st.button("➕ 注册会员", use_container_width=True):
-            register_member_dialog()
-
-    with col_batch:
-        if st.button("📥 批量导入", use_container_width=True):
-            st.session_state.show_batch = not st.session_state.get('show_batch', False)
-            st.rerun()
-    with col_batch_mode:
-        if st.button("🗑️ 批量删除", use_container_width=True, type="secondary"):
-            st.session_state.batch_delete_mode = not st.session_state.batch_delete_mode
-            if not st.session_state.batch_delete_mode:
-                st.session_state.selected_members = []  # 退出批量模式时清空选中
-            st.rerun()
+# 第二行：三个操作按钮
+row2_col1, row2_col2, row2_col3 = st.columns(3)
+with row2_col1:
+    if st.button("➕ 注册会员", use_container_width=True):
+        register_member_dialog()
+with row2_col2:
+    if st.button("📥 批量导入", use_container_width=True):
+        st.session_state.show_batch = not st.session_state.get('show_batch', False)
+        st.rerun()
+with row2_col3:
+    if st.button("🗑️ 批量删除", use_container_width=True, type="secondary"):
+        st.session_state.batch_delete_mode = not st.session_state.batch_delete_mode
+        if not st.session_state.batch_delete_mode:
+            st.session_state.selected_members = []
+        st.rerun()
 
     # B. 批量导入界面
     if st.session_state.get('show_batch', False):
