@@ -9,23 +9,32 @@ def get_conn():
     # ttl=0 极其重要：确保收银时 iPad 看到的是云端最新数据，不使用本地缓存
     return st.connection("gsheets", type=GSheetsConnection)
 
-def read_data(worksheet_name):
-    """读取指定标签页的数据"""
-    conn = get_conn()
+def read_data(table_name):
+    # 假设你在 secrets.toml 中配置了 [connections.gsheets]
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    
     try:
-        # 清除缓存强制读取
-        st.cache_data.clear() 
-        return conn.read(worksheet=worksheet_name, ttl=0)
+        # 核心修改：直接用 gsheets 的 read 方法，而不是 pd.read_sql
+        df = conn.read(worksheet=table_name, ttl="0")
+        
+        # 关键修复：处理 Google Sheets 读入空行或全 NA 的情况
+        df = df.dropna(how='all')
+        return df
     except Exception as e:
-        st.error(f"读取表格 {worksheet_name} 失败，请检查名称是否一致。")
+        st.error(f"读取表格 {table_name} 失败，请检查名称是否一致。")
+        # 返回一个带有预设列的空表，防止 pos_module 崩溃
         return pd.DataFrame()
 
-def save_data(worksheet_name, df):
-    """将整个 DataFrame 写回 Google Sheets"""
-    conn = get_conn()
-    # 这一步会直接覆盖对应的 Worksheet
-    conn.update(worksheet=worksheet_name, data=df)
-
+def save_data(table_name, df):
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    try:
+        # 清洗数据，确保没有不支持的格式
+        df = df.astype(str) 
+        conn.update(worksheet=table_name, data=df)
+        st.toast(f"云端 {table_name} 同步成功")
+    except Exception as e:
+        st.error(f"同步云端失败: {e}")
+        
 # --- 兼容旧代码的逻辑 ---
 def init_db():
     """
