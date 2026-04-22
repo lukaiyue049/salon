@@ -60,15 +60,14 @@ st.markdown("""
         color: white !important;
         border-radius: 20px !important;
         border: none !important;
-        padding: 5px 10px !important;   /* 左右内边距减小，避免过宽 */
-        min-width: 48px !important;      /* 保证最小宽度，让图标有空间居中 */
+        padding: 5px 12px !important;      /* 左右内边距适中 */
+        min-width: 60px !important;        /* 保证所有按钮都有足够宽度，避免挤压 */
         display: inline-flex !important;
         justify-content: center !important;
         align-items: center !important;
         gap: 4px !important;
-        white-space: nowrap !important;  /* 防止文字换行 */
+        white-space: nowrap !important;
     }
-    /* 针对只有图标没有文字的按钮（如垃圾桶） */
     
     .stButton>button:hover {
         background-color: #A6866D !important;
