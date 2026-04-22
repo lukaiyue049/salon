@@ -91,11 +91,13 @@ def show(data_bundle):
                               "items": "余额充值", "total_amount": re_amt, "status": "现结", "staff_name": "店长"}])
                         save_data("members", members_df)
                         save_data("records", pd.concat([records_df, new_rec], ignore_index=True))
+                        st.cache_data.clear()   # ← 新增：清除缓存
                         st.rerun()
                     if row['debt'] > 0:
                         if cb.button("一键结清", key=f"clr_{phone}"):
                             members_df.loc[members_df['phone'] == phone, 'debt'] = 0
                             save_data("members", members_df)
+                            st.cache_data.clear()   # ← 新增：清除缓存
                             st.rerun()
                 with t2:
                     active = items_df[(items_df['member_phone'] == phone) & (items_df['status'] == '使用中')]
@@ -113,6 +115,7 @@ def show(data_bundle):
                                 save_data("salon_items", items_df)
                                 st.toast(f"已核销: {asset['item_name']}")
                                 time.sleep(0.5)
+                                st.cache_data.clear()   # ← 新增：清除缓存
                                 st.rerun()
                 with t3:
                     if not prods_df.empty:
@@ -128,6 +131,7 @@ def show(data_bundle):
                             }])
                             save_data("salon_items", pd.concat([items_df, new_item], ignore_index=True))
                             st.success("登记成功");
+                            st.cache_data.clear()   # ← 新增：清除缓存
                             st.rerun()
                 with t4:
                     hist = records_df[records_df['member_phone'] == phone].sort_index(ascending=False)
@@ -163,6 +167,7 @@ def register_member_dialog():
                 "debt": debt, "note": "", "reg_date": datetime.now().strftime("%Y-%m-%d")
             }])
             save_data("members", pd.concat([members_df, new_row], ignore_index=True))
+            st.cache_data.clear()   # ← 新增：清除缓存
             st.rerun()
 
 
@@ -188,4 +193,5 @@ def confirm_batch_delete():
         save_data("records", records_df[~records_df['member_phone'].astype(str).isin(selected)])
         st.session_state.selected_members = []
         st.session_state.batch_delete_mode = False
+        st.cache_data.clear()   # ← 新增：清除缓存
         st.rerun()
