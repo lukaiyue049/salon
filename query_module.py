@@ -288,56 +288,55 @@ def add_product_dialog():
                         "数量": qty, "单位": u, "模式": mode, "规格": spec
                     })
                     st.toast("已加入清单")
-
-      with menu[1]:
-            if st.session_state.batch_list:
-                # 1. 定义固定的列宽比例 [名称, 类型, 单价, 数量, 单位]
-                # 这能保证在 iPad 上上下绝对对齐
-                batch_col_layout = [2.5, 1.5, 1.5, 1.5, 1]
-                
-                # 2. 手动渲染表头
-                h_cols = st.columns(batch_col_layout)
-                h_cols[0].write("**名称**")
-                h_cols[1].write("**类型**")
-                h_cols[2].write("**单价**")
-                h_cols[3].write("**数量**")
-                h_cols[4].write("**单位**")
-                st.divider()
-    
-                # 3. 循环渲染清单每一行
-                for idx, item in enumerate(st.session_state.batch_list):
-                    r_cols = st.columns(batch_col_layout)
-                    r_cols[0].write(item['名称'])
-                    r_cols[1].write(item['类型'])
-                    r_cols[2].write(f"¥{item['单价']:.2f}")
-                    r_cols[3].write(str(item['数量']))
-                    r_cols[4].write(item['单位'])
-                
-                st.markdown("---") # 底部线
-    
-                # 4. 提交逻辑（保持你原有的逻辑，但确保 save_data 写入）
-                if st.button("🚀 确认全部入库", use_container_width=True, type="primary"):
-                    for item in st.session_state.batch_list:
-                        if item['模式'] == "新登记录入":
-                            # 再次检查 prod_name 是否存在，防止 Key 冲突
-                            if item['名称'] not in prods_df['prod_name'].values:
-                                new_row = pd.DataFrame([{
-                                    "prod_name": item['名称'], "category": str(item['规格']),
-                                    "price": item['单价'], "stock": item['数量'], "unit": item['单位'],
-                                    "type": item['类型'], "last_updated": now_str
-                                }])
-                                prods_df = pd.concat([prods_df, new_row], ignore_index=True)
-                        else:
-                            idx_list = prods_df[prods_df['prod_name'] == item['名称']].index
-                            prods_df.loc[idx_list, 'stock'] += item['数量']
-                            if item['单价'] > 0:
-                                prods_df.loc[idx_list, 'price'] = item['单价']
-                    
-                    save_data("products", prods_df)
-                    st.session_state.batch_list = []
-                    st.rerun()
-            else:
-                st.info("💡 暂无待入库项目")
+                with menu[1]:
+                    if st.session_state.batch_list:
+                        # 1. 定义固定的列宽比例 [名称, 类型, 单价, 数量, 单位]
+                        # 这能保证在 iPad 上上下绝对对齐
+                        batch_col_layout = [2.5, 1.5, 1.5, 1.5, 1]
+                        
+                        # 2. 手动渲染表头
+                        h_cols = st.columns(batch_col_layout)
+                        h_cols[0].write("**名称**")
+                        h_cols[1].write("**类型**")
+                        h_cols[2].write("**单价**")
+                        h_cols[3].write("**数量**")
+                        h_cols[4].write("**单位**")
+                        st.divider()
+            
+                        # 3. 循环渲染清单每一行
+                        for idx, item in enumerate(st.session_state.batch_list):
+                            r_cols = st.columns(batch_col_layout)
+                            r_cols[0].write(item['名称'])
+                            r_cols[1].write(item['类型'])
+                            r_cols[2].write(f"¥{item['单价']:.2f}")
+                            r_cols[3].write(str(item['数量']))
+                            r_cols[4].write(item['单位'])
+                        
+                        st.markdown("---") # 底部线
+            
+                        # 4. 提交逻辑（保持你原有的逻辑，但确保 save_data 写入）
+                        if st.button("🚀 确认全部入库", use_container_width=True, type="primary"):
+                            for item in st.session_state.batch_list:
+                                if item['模式'] == "新登记录入":
+                                    # 再次检查 prod_name 是否存在，防止 Key 冲突
+                                    if item['名称'] not in prods_df['prod_name'].values:
+                                        new_row = pd.DataFrame([{
+                                            "prod_name": item['名称'], "category": str(item['规格']),
+                                            "price": item['单价'], "stock": item['数量'], "unit": item['单位'],
+                                            "type": item['类型'], "last_updated": now_str
+                                        }])
+                                        prods_df = pd.concat([prods_df, new_row], ignore_index=True)
+                                else:
+                                    idx_list = prods_df[prods_df['prod_name'] == item['名称']].index
+                                    prods_df.loc[idx_list, 'stock'] += item['数量']
+                                    if item['单价'] > 0:
+                                        prods_df.loc[idx_list, 'price'] = item['单价']
+                            
+                            save_data("products", prods_df)
+                            st.session_state.batch_list = []
+                            st.rerun()
+                    else:
+                        st.info("💡 暂无待入库项目")
 
 # --- 3. 非销售扣除弹窗 ---
 @st.dialog("非销售扣除登记")
