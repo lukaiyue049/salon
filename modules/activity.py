@@ -3,7 +3,7 @@ import pandas as pd
 import json
 import time
 from datetime import datetime
-from db_manager import read_data, save_data
+from db_manager import save_data
 
 def show(data_bundle):
     st.header("🎯 活动礼包")
@@ -47,6 +47,8 @@ def show(data_bundle):
 
         if st.button("🚀 立即发布活动", type="primary", use_container_width=True):
             if name and counts:
+                # 注意：发布活动需要读取最新活动表（可能会触发请求，但频率低）
+                from db_manager import read_data
                 acts_latest = read_data("activities")
                 new_act = pd.DataFrame([{
                     "id": int(time.time()), "name": name, "packages": json.dumps(counts, ensure_ascii=False),
@@ -80,10 +82,12 @@ def show(data_bundle):
                 if not targs:
                     st.error("请至少选择一个会员")
                 else:
+                    st.warning("⚠️ 注意：批量办理使用的是最近一次同步的库存数据。如需最新库存，请先点击侧边栏「同步最新数据」按钮。")
                     with st.spinner("同步云端..."):
-                        df_p = read_data("products")
-                        df_si = read_data("salon_items")
-                        df_r = read_data("records")
+                        # 使用缓存数据（副本）
+                        df_p = data_bundle["products"].copy()
+                        df_si = data_bundle["salon_items"].copy()
+                        df_r = data_bundle["records"].copy()
                         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         for phone in targs:
                             for it_full, it_qty in pkg.items():
