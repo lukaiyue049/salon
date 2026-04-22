@@ -117,10 +117,10 @@ elif selected == "项目库存":
             return
 
         if prod_type == "实物产品":
-            cols = st.columns([2.5, 1, 1, 1.2, 0.5])
+            cols = st.columns([1, 1, 1, 1, 1])
             titles = ["名称", "单价", "库存", "最后更新", "操作"]
         else:
-            cols = st.columns([3, 1, 1, 0.5])
+            cols = st.columns([1, 1, 1, 1])
             titles = ["名称", "单价", "单位", "操作"]
         
         for col, t in zip(cols, titles):
