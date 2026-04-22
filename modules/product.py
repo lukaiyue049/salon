@@ -3,24 +3,22 @@ import pandas as pd
 from datetime import datetime
 from db_manager import read_data, save_data
 
-
 def show(data_bundle):
     st.header("📦 项目与产品管理")
     products_df = data_bundle["products"]
-
+    
     col_op1, col_op2 = st.columns(2)
     if col_op1.button("➕ 登记/进货/调价", use_container_width=True, type="primary"):
         add_product_dialog()
     if col_op2.button("✂️ 损耗/店用", use_container_width=True):
         deduct_product_dialog()
-
+    
     st.divider()
     t_product, t_service = st.tabs(["🛍️ 实物产品库存", "💆 服务项目清单"])
     with t_product:
         render_product_list(products_df, "实物产品")
     with t_service:
         render_product_list(products_df, "服务项目")
-
 
 def render_product_list(df, prod_type):
     sub_df = df[df['type'] == prod_type].copy()
@@ -37,7 +35,7 @@ def render_product_list(df, prod_type):
     for c, t in zip(cols, titles):
         c.markdown(f"<p style='color:#8D6E63; font-weight:bold'>{t}</p>", unsafe_allow_html=True)
     st.divider()
-
+    
     for idx, row in sub_df.iterrows():
         if prod_type == "实物产品":
             c1, c2, c3, c4, c5 = st.columns([2.5, 1, 1, 1.2, 0.5], vertical_alignment="center")
@@ -55,13 +53,12 @@ def render_product_list(df, prod_type):
             if c4.button("🗑️", key=f"del_{prod_type}_{idx}"):
                 confirm_delete_product(row['prod_name'], prod_type)
 
-
 @st.dialog("项目管理 / 录入与进货")
 def add_product_dialog():
     prods_df = read_data("products")
     if 'batch_list' not in st.session_state:
         st.session_state.batch_list = []
-
+    
     menu = st.tabs(["单次录入", "批量清单"])
     with menu[0]:
         p_type = st.radio("业务类别", ["实物产品", "服务项目"], horizontal=True)
@@ -76,8 +73,7 @@ def add_product_dialog():
                     unit = st.selectbox("单位", ["盒", "瓶", "支", "个", "套"])
                     price = st.number_input("单价", min_value=0.0)
                     stock = st.number_input(f"初始库存({unit})", min_value=0.0)
-                    spec = st.number_input("规格系数", min_value=1,
-                                           value=10 if unit == "盒" else 5 if unit == "套" else 1)
+                    spec = st.number_input("规格系数", min_value=1, value=10 if unit=="盒" else 5 if unit=="套" else 1)
             else:
                 filtered = prods_df[prods_df['type'] == p_type]
                 if filtered.empty:
@@ -87,7 +83,7 @@ def add_product_dialog():
                 price = st.number_input("更新单价 (0为不改)", 0.0)
                 stock = st.number_input("增加数量", min_value=0.0)
                 unit, spec = "原单位", 1
-
+            
             c1, c2 = st.columns(2)
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             if c1.button("🚀 立即录入", use_container_width=True, type="primary"):
@@ -137,7 +133,6 @@ def add_product_dialog():
         else:
             st.info("清单为空")
 
-
 @st.dialog("损耗登记")
 def deduct_product_dialog():
     prods_df = read_data("products")
@@ -158,13 +153,12 @@ def deduct_product_dialog():
         prods_df.loc[prods_df['prod_name'] == sel_p, 'stock'] -= real_deduct
         new_rec = pd.DataFrame([{
             "member_phone": "SYSTEM", "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "items": f"【{reason}】{sel_p} {num}{mode.replace('按', '')}",
+            "items": f"【{reason}】{sel_p} {num}{mode.replace('按','')}",
             "total_amount": 0, "status": "非销售损耗", "staff_name": "后台"
         }])
         save_data("products", prods_df)
         save_data("records", pd.concat([records_df, new_rec], ignore_index=True))
         st.rerun()
-
 
 @st.dialog("确认删除")
 def confirm_delete_product(name, p_type):
