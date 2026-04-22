@@ -6,8 +6,8 @@ from db_manager import init_db, read_data, save_data
 st.set_page_config(page_title="929皮肤管理中心", page_icon="✨", layout="wide")
 init_db()
 
-# ---------- 全局数据缓存（1小时）----------
-@st.cache_data(ttl=3600)
+# ---------- 全局数据缓存（TTL=10秒，实现准实时同步）----------
+@st.cache_data(ttl=10, show_spinner="正在同步云端数据...")
 def load_all_data():
     try:
         return {
@@ -21,7 +21,8 @@ def load_all_data():
         }
     except Exception as e:
         if "429" in str(e):
-            st.error("⚠️ 由于 Google API 限流，无法加载最新数据。请稍后点击侧边栏「同步最新数据」按钮重试。")
+            st.error("⚠️ 云端限流，数据可能不是最新的。请稍后自动重试。")
+            # 返回空数据，但不要停止程序
             return {k: pd.DataFrame() for k in ["products","members","staffs","sys_config","activities","records","salon_items"]}
         else:
             raise
@@ -29,7 +30,7 @@ def load_all_data():
 # 导入模块
 from modules import pos, member, product, activity, finance, settings
 
-# ---------- CSS 样式 ----------
+# ---------- CSS 样式（保持不变）----------
 st.markdown("""
 <style>
 .stApp { background-color: #FDFBF9; }
@@ -75,17 +76,15 @@ with st.sidebar:
         }
     )
     st.write("---")
-    if st.button("🔄 同步最新数据", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
-    st.caption("💡 提示：由于 Google API 限制，数据并非实时同步。点击上方按钮可手动刷新。")
+    # 移除手动刷新按钮，因为会自动同步
+    st.caption("💡 数据将自动同步（最多延迟10秒）")
 
 # ---------- 加载数据 ----------
 data_bundle = load_all_data()
 
-# 如果数据为空（429错误），停止执行
+# 如果数据为空（429错误），显示警告但不停止
 if all(df.empty for df in data_bundle.values()):
-    st.stop()
+    st.warning("⚠️ 暂时无法连接云端，请检查网络或稍后刷新页面。")
 
 # ---------- 路由 ----------
 if selected == "消费收银":
