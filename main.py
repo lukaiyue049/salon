@@ -10,9 +10,6 @@ st.set_page_config(
     page_icon="✨",  # 这里可以换成任何你喜欢的 Emoji，比如 🌸, 💄, 🌿
     layout="wide"
 )
-# ---------- 新增：手机模式状态初始化 ----------
-if "is_mobile" not in st.session_state:
-    st.session_state.is_mobile = False
 init_db()
 conn = get_conn()
 
@@ -190,24 +187,9 @@ with st.sidebar:
             },
         }
     )
-        # ---------- 新增：手机模式切换开关 ----------
-    st.divider()
-    mobile_mode = st.toggle("📱 手机模式（底部导航）", value=st.session_state.is_mobile)
-    if mobile_mode != st.session_state.is_mobile:
-        st.session_state.is_mobile = mobile_mode
-        st.rerun()
 
-# ---------- 新增：根据手机模式获取当前页面 ----------
-if st.session_state.is_mobile:
-    # 手机模式下，从 session_state 读取选中的索引
-    if "mobile_selected" not in st.session_state:
-        st.session_state.mobile_selected = 0
-    page_map = ["消费收银", "会员管理", "营销活动", "项目库存", "财务报表", "系统设置"]
-    current_page = page_map[st.session_state.mobile_selected]
-else:
-    current_page = selected
 # 3. 页面路由逻辑
-if current_page == "消费收银":
+if selected == "消费收银":
     staff_res = pd.read_sql("SELECT name FROM staffs", conn)
     real_staffs = staff_res['name'].tolist()
 
@@ -217,18 +199,18 @@ if current_page == "消费收银":
     # 传给收银模块
     pos_module.show(staff_list_for_pos)
 
-elif current_page == "会员管理":
+elif selected == "会员管理":
     # 每次点击导航或页面刷新，都会重新执行这条 SQL
     query_module.show_member_management()
 
-elif current_page == "营销活动":
+elif selected == "营销活动":
     activity_module.show_activity_center()
 
 # --- main.py 约第 33 行开始替换 ---
 # main.py
 # main.py 中 "项目库存" 部分的修改方案
 
-elif current_page == "项目库存":
+elif selected == "项目库存":
     st.header("📦 项目与产品管理")
 
 
@@ -295,7 +277,7 @@ elif current_page == "项目库存":
         render_product_list(conn, "服务项目", "服务项目（如祛痘、按摩、清洁）")
         st.caption("注：服务项目通常按次计费，无需管理实物库存。")
 
-elif current_page == "财务报表":
+elif selected == "财务报表":
     st.header("📊 财务报表分析")
     pwd = st.sidebar.text_input("请输入报表查看密码", type="password")
     if pwd == "929888":
@@ -303,7 +285,7 @@ elif current_page == "财务报表":
     else:
         st.warning("🔒 该模块仅限店长查看，请输入正确的密码。")
 
-elif current_page == "系统设置":
+elif selected == "系统设置":
     st.header("⚙️ 系统管理")
 
     # 1. 员工维护（改为列表+行内删除）
@@ -386,16 +368,3 @@ elif current_page == "系统设置":
         )
 
     st.info("建议定期导出一次数据存放在 U 盘或电脑桌面，防止数据丢失。")
-# ---------- 新增：手机模式底部导航栏 ----------
-if st.session_state.is_mobile:
-    st.divider()
-    cols = st.columns(6)
-    page_names = ["💰 收银", "👤 会员", "🎁 活动", "📦 库存", "📊 财务", "⚙️ 设置"]
-    page_map = ["消费收银", "会员管理", "营销活动", "项目库存", "财务报表", "系统设置"]
-    
-    for idx, col in enumerate(cols):
-        if col.button(page_names[idx], key=f"nav_{idx}", use_container_width=True,
-                      type="primary" if st.session_state.mobile_selected == idx else "secondary"):
-            st.session_state.mobile_selected = idx
-            st.rerun()
-    st.caption("👇 点击按钮切换功能")
