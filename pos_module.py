@@ -114,15 +114,30 @@ def show(staff_list):
             else:
                 st.warning(f"⚠️ 库中暂无可用的{p_type}，请先进行补货。")
 
+        # pos_module.py 活动礼包部分
         with t2:
             acts = pd.read_sql("SELECT * FROM activities WHERE is_open=1", conn)
             if not acts.empty:
                 an = st.selectbox("选择活动", acts['name'].tolist())
-                if st.button("🎁 购买活动"):
+                
+                # 清晰的大按钮选择
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    use_in_shop = st.button("🏠 在店使用", use_container_width=True, type="primary")
+                with col_btn2:
+                    take_away = st.button("📦 直接带走", use_container_width=True)
+                
+                if use_in_shop or take_away:
                     ai = acts[acts['name'] == an].iloc[0]
-                    st.session_state.cart.append(
-                        {"id": datetime.now().timestamp(), "name": f"🎁 {an}", "price": ai['price'], "qty": 1,
-                         "type": "act", "act_id": ai['id']})
+                    st.session_state.cart.append({
+                        "id": datetime.now().timestamp(),
+                        "name": f"🎁 {an}",
+                        "price": ai['price'],
+                        "qty": 1,
+                        "type": "act",
+                        "act_id": ai['id'],
+                        "usage": "store" if use_in_shop else "takeaway"
+                    })
                     st.rerun()
 
     with col_b:
