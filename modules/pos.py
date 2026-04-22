@@ -1,192 +1,183 @@
 import streamlit as st
 import pandas as pd
-import json
 import time
 from datetime import datetime
-from db_manager import save_data, read_data
+from db_manager import read_data, save_data
 
 def show(data_bundle):
-    st.header("💰 收银台")
-    if 'cart' not in st.session_state:
-        st.session_state.cart = []
-
-    # 从 bundle 获取数据（优先使用缓存）
-    products_df = data_bundle["products"].copy()
+    st.header("👤 会员中心")
     members_df = data_bundle["members"].copy()
-    acts_df = data_bundle["activities"].copy()
-    config_df = data_bundle["sys_config"]
-    staff_list = data_bundle["staffs"]['name'].tolist() if not data_bundle["staffs"].empty else ["店长"]
-
+    records_df = data_bundle["records"]
+    items_df = data_bundle["salon_items"]
+    prods_df = data_bundle["products"]
+    
     # 欠款阈值
     limit = 500.0
-    if not config_df.empty:
-        debt_row = config_df[config_df['item'] == 'debt_limit']
+    config = data_bundle["sys_config"]
+    if not config.empty:
+        debt_row = config[config['item'] == 'debt_limit']
         if not debt_row.empty:
             limit = float(debt_row['value'].values[0])
 
-    # 会员搜索
-    st.subheader("👤 会员搜索")
-    q = st.text_input("🔍 搜索会员（姓名/手机号）", key="member_search")
-    sel_m = None
-    if q and not members_df.empty:
-        members_df['phone'] = members_df['phone'].astype(str)
-        mask = members_df['name'].str.contains(q, na=False) | members_df['phone'].str.contains(q, na=False)
-        m_df = members_df[mask].copy()
-        if not m_df.empty:
-            m_df['display'] = m_df.apply(lambda x: f"{x['name']} ({x['phone']}) {'🔴' if float(x['debt']) > limit else ''}", axis=1)
-            target = st.selectbox("确认选中：", m_df['display'].tolist())
-            sel_m = m_df[m_df['display'] == target].iloc[0].to_dict()
-            st.success(f"✅ 当前选中：{sel_m['name']} (余额: ¥{sel_m['balance']})")
-        else:
-            st.warning("❌ 未找到该会员")
-            if st.button("➕ 快速注册新会员"):
-                from modules.member import register_member_dialog
-                register_member_dialog()
+    # 批量删除状态
+    if 'batch_delete_mode' not in st.session_state:
+        st.session_state.batch_delete_mode = False
+    if 'selected_members' not in st.session_state:
+        st.session_state.selected_members = []
 
-    st.divider()
-    col_a, col_b = st.columns([1, 1.2])
+    # 搜索与筛选
+    row1_col1, row1_col2 = st.columns([3, 1])
+    search = row1_col1.text_input("搜索", placeholder="姓名/手机号", label_visibility="collapsed")
+    only_debt = row1_col2.toggle("🚨 只看超额", value=False)
 
-    # 购物车添加部分
-    with col_a:
-        st.subheader("🛍️ 业务选购")
-        t1, t2, t3 = st.tabs(["🛍️ 实物产品", "💆 服务项目", "🎁 活动礼包"])
+    c1, c2, c3, c4 = st.columns(4)
+    if c1.button("➕ 注册会员", use_container_width=True):
+        register_member_dialog()
+    if c2.button("📦 项目管理", use_container_width=True):
+        from modules.product import add_product_dialog
+        add_product_dialog()
+    if c3.button("🔥 损耗登记", use_container_width=True):
+        from modules.product import deduct_product_dialog
+        deduct_product_dialog()
+    del_btn_color = "primary" if st.session_state.batch_delete_mode else "secondary"
+    if c4.button("🗑️ 批量操作", use_container_width=True, type=del_btn_color):
+        st.session_state.batch_delete_mode = not st.session_state.batch_delete_mode
+        st.rerun()
 
-        with t1:
-            prods = products_df[(products_df['type']=='实物产品') & (products_df['stock'].astype(float) > 0)]
-            if not prods.empty:
-                p_name = st.selectbox("选择产品", prods['prod_name'].tolist(), key="t1")
-                usage = st.radio("使用方式", ["直接带走", "在店使用"], horizontal=True, key="u1")
-                qty = st.number_input("数量", 1, 100, 1, key="q1")
-                if st.button("➕ 加入购物车", key="b1", use_container_width=True):
-                    item = prods[prods['prod_name'] == p_name].iloc[0]
-                    st.session_state.cart.append({
-                        "id": time.time(), "name": f"{p_name} ({usage})", "raw_name": p_name,
-                        "price": float(item['price']), "qty": qty, "is_activity": False,
-                        "is_store_use": (usage == "在店使用")
-                    })
-                    st.rerun()
-            else:
-                st.info("暂无库存实物产品")
+    # 筛选
+    df = members_df.copy()
+    df['debt'] = pd.to_numeric(df['debt'], errors='coerce').fillna(0)
+    if only_debt:
+        df = df[df['debt'] > limit]
+    if search:
+        df = df[df['name'].str.contains(search, na=False) | df['phone'].str.contains(search, na=False)]
 
-        with t2:
-            items = products_df[products_df['type']=='服务项目']
-            if not items.empty:
-                i_name = st.selectbox("选择项目", items['prod_name'].tolist(), key="t2")
-                qty_i = st.number_input("数量", 1, 100, 1, key="q2")
-                if st.button("➕ 加入购物车", key="b2", use_container_width=True):
-                    item = items[items['prod_name'] == i_name].iloc[0]
-                    st.session_state.cart.append({
-                        "id": time.time(), "name": f"{i_name} (在店使用)", "raw_name": i_name,
-                        "price": float(item['price']), "qty": qty_i, "is_activity": False, "is_store_use": True
-                    })
-                    st.rerun()
-            else:
-                st.info("暂无服务项目")
+    if df.empty:
+        st.info("暂无符合条件的会员")
+        return
 
-        with t3:
-            acts = acts_df[acts_df['is_open'].astype(str) == '1']
-            if not acts.empty:
-                a_name = st.selectbox("选择活动礼包", acts['name'].tolist(), key="t3")
-                qty_a = st.number_input("数量", 1, 100, 1, key="q3")
-                if st.button("➕ 加入购物车", key="b3", use_container_width=True):
-                    ai = acts[acts['name'] == a_name].iloc[0]
-                    st.session_state.cart.append({
-                        "id": time.time(), "name": f"🎁 {a_name}", "price": float(ai['price']),
-                        "qty": qty_a, "is_activity": True, "packages": json.loads(ai['packages']),
-                        "is_store_use": True
-                    })
-                    st.rerun()
-            else:
-                st.info("暂无进行中的活动")
+    # 展示列表（分页）
+    for _, row in df.head(60).iterrows():
+        phone = str(row['phone']).split('.')[0]
+        is_debt_high = row['debt'] > limit
+        with st.container(border=True):
+            cols = st.columns([0.5, 1.5, 2, 1, 1] if st.session_state.batch_delete_mode else [1.5, 2, 1, 1, 0.8])
+            idx = 0
+            if st.session_state.batch_delete_mode:
+                if cols[idx].checkbox("", key=f"chk_{phone}"):
+                    if phone not in st.session_state.selected_members:
+                        st.session_state.selected_members.append(phone)
+                idx += 1
+            cols[idx].markdown(f"**{'🔴' if is_debt_high else '👤'} {row['name']}**")
+            cols[idx].caption(f"📱 {phone}")
+            idx += 1
+            cols[idx].write(f"📝 {row['skin_info'] if pd.notna(row['skin_info']) else '无备注'}")
+            idx += 1
+            cols[idx].metric("余额", f"¥{float(row['balance']):.0f}")
+            idx += 1
+            cols[idx].metric("欠款", f"¥{float(row['debt']):.0f}", delta=f"-{row['debt']}" if row['debt'] > 0 else None, delta_color="inverse")
 
-    # 购物车展示与结算
-    with col_b:
-        st.subheader("📋 待结算清单")
-        if not st.session_state.cart:
-            st.info("购物车是空的")
-        else:
-            total = 0
-            for idx, item in enumerate(st.session_state.cart):
-                with st.container(border=True):
-                    c1, c2, c3 = st.columns([3, 1.5, 1], vertical_alignment="center")
-                    c1.write(f"**{item['name']}**")
-                    subtotal = item['price'] * item['qty']
-                    total += subtotal
-                    c2.write(f"¥{subtotal:.2f}")
-                    if c3.button("🗑️", key=f"del_{item['id']}"):
-                        st.session_state.cart.pop(idx)
-                        st.rerun()
-            st.divider()
-            st.markdown(f"### 总金额：:red[¥{total:.2f}]")
-            method = st.radio("支付方式", ["现结", "余额扣款", "挂账"], horizontal=True)
-            staff = st.selectbox("经办人", staff_list)
-
-            if st.button("🚀 确认结算", type="primary", use_container_width=True):
-                if not sel_m:
-                    st.error("请先确认会员！")
-                elif method == "余额扣款" and float(sel_m['balance']) < total:
-                    st.error("余额不足！")
-                else:
-                    with st.spinner("结算中..."):
-                        # 重新读取最新数据（避免并发冲突）
-                        members_df = read_data("members")
-                        products_df = read_data("products")
-                        salon_df = read_data("salon_items")
-                        records_df = read_data("records")
-                        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                        # 更新会员
-                        m_idx = members_df[members_df['phone'] == sel_m['phone']].index
-                        if len(m_idx) > 0:
-                            if method == "余额扣款":
-                                members_df.at[m_idx[0], 'balance'] = float(members_df.at[m_idx[0], 'balance']) - total
-                            elif method == "挂账":
-                                members_df.at[m_idx[0], 'debt'] = float(members_df.at[m_idx[0], 'debt']) + total
-
-                        # 处理购物车：扣库存，增加院装资产
-                        for item in st.session_state.cart:
-                            if item['is_activity']:
-                                for p_n, p_q in item['packages'].items():
-                                    t_qty = p_q * item['qty']
-                                    p_idx = products_df[products_df['prod_name'] == p_n].index
-                                    if not p_idx.empty:
-                                        products_df.at[p_idx[0], 'stock'] = max(0, float(products_df.at[p_idx[0], 'stock']) - t_qty)
-                                        spec = float(products_df.at[p_idx[0], 'category']) if str(products_df.at[p_idx[0], 'category']).replace('.','').isdigit() else 1
-                                        new_asset = pd.DataFrame([{
-                                            "member_phone": sel_m['phone'], "item_name": p_n,
-                                            "total_qty": t_qty * spec, "used_qty": 0,
-                                            "status": "使用中", "unit": products_df.at[p_idx[0], 'unit'], "buy_date": now_str
-                                        }])
-                                        salon_df = pd.concat([salon_df, new_asset], ignore_index=True)
-                            else:
-                                p_idx = products_df[products_df['prod_name'] == item['raw_name']].index
-                                if not p_idx.empty:
-                                    products_df.at[p_idx[0], 'stock'] = max(0, float(products_df.at[p_idx[0], 'stock']) - item['qty'])
-                                    if item['is_store_use']:
-                                        spec = float(products_df.at[p_idx[0], 'category']) if str(products_df.at[p_idx[0], 'category']).replace('.','').isdigit() else 1
-                                        new_asset = pd.DataFrame([{
-                                            "member_phone": sel_m['phone'], "item_name": item['raw_name'],
-                                            "total_qty": item['qty'] * spec, "used_qty": 0,
-                                            "status": "使用中", "unit": products_df.at[p_idx[0], 'unit'], "buy_date": now_str
-                                        }])
-                                        salon_df = pd.concat([salon_df, new_asset], ignore_index=True)
-
-                        # 保存更新
+            with st.expander("账户详情 & 业务办理"):
+                t1, t2, t3, t4 = st.tabs(["💰 充值还款", "✨ 剩余资产", "📦 存店登记", "📜 消费历史"])
+                with t1:
+                    ca, cb = st.columns(2)
+                    re_amt = ca.number_input("金额", min_value=0.0, key=f"re_{phone}")
+                    if ca.button("充值", key=f"rebtn_{phone}"):
+                        members_df.loc[members_df['phone'] == phone, 'balance'] += re_amt
+                        new_rec = pd.DataFrame([{"member_phone": phone, "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                                 "items": "余额充值", "total_amount": re_amt, "status": "现结", "staff_name": "店长"}])
                         save_data("members", members_df)
-                        save_data("products", products_df)
-                        save_data("salon_items", salon_df)
-
-                        # 记录流水
-                        desc = ",".join([i['name'] for i in st.session_state.cart])
-                        new_rec = pd.DataFrame([{
-                            "member_phone": sel_m['phone'], "date": now_str,
-                            "items": desc, "total_amount": total, "status": method, "staff_name": staff
-                        }])
                         save_data("records", pd.concat([records_df, new_rec], ignore_index=True))
-
-                        st.balloons()
-                        st.success("结算成功！")
-                        st.session_state.cart = []
-                        st.cache_data.clear()
-                        time.sleep(1)
                         st.rerun()
+                    if row['debt'] > 0:
+                        if cb.button("一键结清", key=f"clr_{phone}"):
+                            members_df.loc[members_df['phone'] == phone, 'debt'] = 0
+                            save_data("members", members_df)
+                            st.rerun()
+                with t2:
+                    active = items_df[(items_df['member_phone'] == phone) & (items_df['status'] == '使用中')]
+                    if active.empty:
+                        st.caption("暂无可用资产")
+                    else:
+                        for _, asset in active.iterrows():
+                            remains = float(asset['total_qty']) - float(asset['used_qty'])
+                            col_left, col_right = st.columns([3, 1])
+                            col_left.write(f"**{asset['item_name']}** (余 {remains:.0f} {asset['unit']})")
+                            if col_right.button("核销", key=f"use_{asset.name}_{phone}"):
+                                items_df.at[asset.name, 'used_qty'] += 1
+                                if items_df.at[asset.name, 'used_qty'] >= items_df.at[asset.name, 'total_qty']:
+                                    items_df.at[asset.name, 'status'] = '已用完'
+                                save_data("salon_items", items_df)
+                                st.toast(f"已核销: {asset['item_name']}")
+                                time.sleep(0.5)
+                                st.rerun()
+                with t3:
+                    if not prods_df.empty:
+                        prod_list = prods_df['prod_name'].tolist()
+                        add_name = st.selectbox("产品", prod_list, key=f"addn_{phone}")
+                        add_q = st.number_input("数量", 1, 100, 1, key=f"addq_{phone}")
+                        if st.button("确认存入", key=f"addb_{phone}"):
+                            unit = prods_df[prods_df['prod_name'] == add_name]['unit'].values[0]
+                            new_item = pd.DataFrame([{
+                                "member_phone": phone, "item_name": add_name, "total_qty": add_q,
+                                "used_qty": 0, "status": "使用中", "unit": unit, "buy_date": datetime.now().strftime("%Y-%m-%d")
+                            }])
+                            save_data("salon_items", pd.concat([items_df, new_item], ignore_index=True))
+                            st.success("登记成功"); st.rerun()
+                with t4:
+                    hist = records_df[records_df['member_phone'] == phone].sort_index(ascending=False)
+                    st.dataframe(hist[['date', 'items', 'total_amount', 'status']], hide_index=True, use_container_width=True)
+
+    # 批量删除确认
+    if st.session_state.batch_delete_mode and st.session_state.selected_members:
+        st.divider()
+        if st.button("⚠️ 确认删除选中会员", type="primary", use_container_width=True):
+            confirm_batch_delete()
+
+@st.dialog("👤 注册新会员")
+def register_member_dialog():
+    members_df = read_data("members")
+    with st.form("reg_form"):
+        name = st.text_input("姓名*")
+        phone = st.text_input("手机号*")
+        c1, c2 = st.columns(2)
+        balance = c1.number_input("初始余额", 0.0)
+        debt = c2.number_input("初始欠款", 0.0)
+        skin_info = st.text_area("备注/皮肤情况")
+        if st.form_submit_button("确认提交", type="primary"):
+            if not name or not phone:
+                st.error("请填写姓名和手机号")
+                return
+            if phone in members_df['phone'].astype(str).values:
+                st.error("手机号已存在")
+                return
+            new_row = pd.DataFrame([{
+                "phone": phone, "name": name, "balance": balance, "skin_info": skin_info,
+                "debt": debt, "note": "", "reg_date": datetime.now().strftime("%Y-%m-%d")
+            }])
+            save_data("members", pd.concat([members_df, new_row], ignore_index=True))
+            st.rerun()
+
+@st.dialog("⚠️ 批量清理确认")
+def confirm_batch_delete():
+    members_df = read_data("members")
+    items_df = read_data("salon_items")
+    records_df = read_data("records")
+    selected = st.session_state.get('selected_members', [])
+    if not selected:
+        st.warning("未勾选任何会员")
+        return
+    targets = members_df[members_df['phone'].astype(str).isin(selected)]
+    forbidden = targets[(targets['balance'].astype(float) != 0) | (targets['debt'].astype(float) != 0)]
+    if not forbidden.empty:
+        st.error("有余款或欠款的会员不可删除")
+        return
+    st.error(f"确认删除 {len(targets)} 名会员及其所有记录？")
+    if st.button("🔥 永久清理", type="primary"):
+        mask = ~members_df['phone'].astype(str).isin(selected)
+        save_data("members", members_df[mask])
+        save_data("salon_items", items_df[~items_df['member_phone'].astype(str).isin(selected)])
+        save_data("records", records_df[~records_df['member_phone'].astype(str).isin(selected)])
+        st.session_state.selected_members = []
+        st.session_state.batch_delete_mode = False
+        st.rerun()
