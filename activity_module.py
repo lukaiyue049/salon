@@ -75,15 +75,23 @@ def show_activity_center():
     with t2:
         st.info("注意：批量办理仅支持现金/转账扣款（现结），将自动生成财务流水")
         acts = pd.read_sql("SELECT * FROM activities WHERE is_open=1", conn)
+        
         if not acts.empty:
             sel_act = st.selectbox("选择活动", acts['name'].tolist())
             ad = acts[acts['name'] == sel_act].iloc[0]
             pkg = json.loads(ad['packages'])
-
+            
+            # 获取会员数据
             ms = pd.read_sql("SELECT phone, name FROM members", conn)
-            targs = st.multiselect("选择办理会员", ms['phone'].tolist(),
-                                   format_func=lambda x: f"{ms[ms['phone'] == x]['name'].values[0]}({x})")
-
+            
+            # 搜索框：现在可以输入姓名或手机号进行过滤了
+            targs = st.multiselect(
+                "选择办理会员 (可输入姓名或手机号搜索)", 
+                ms['phone'].tolist(),
+                format_func=lambda x: f"{ms[ms['phone'] == x]['name'].values[0]} ({x})",
+                placeholder="🔍 搜索姓名或手机号..."
+            )
+            
             staff_df = pd.read_sql("SELECT name FROM staffs", conn)
             staff_list = staff_df['name'].tolist() if not staff_df.empty else ["店长"]
             staff = st.selectbox("经办人", staff_list)
@@ -94,19 +102,31 @@ def show_activity_center():
                 else:
                     cur = conn.cursor()
                     for p_phone in targs:
+                        # 遍历礼包内的每个项目
                         for it_name, it_qty in pkg.items():
-                            cur.execute("UPDATE products SET stock = MAX(0, stock - ?), last_updated = datetime('now','localtime') WHERE prod_name = ?",
-                                (it_qty, it_name))
+                            # 1. 扣减产品库存
+                            cur.execute("UPDATE products SET stock = MAX(0, stock - ?), last_updated = datetime('now','localtime') WHERE prod_name = ?", (it_qty, it_name))
+                            
+                            # 2. 获取产品单位 (unit)，如果没找到默认用'次'
+                            u_res = pd.read_sql("SELECT unit FROM products WHERE prod_name=?", conn, params=(it_name,))
+                            unit = u_res.iloc[0]['unit'] if not u_res.empty else "次"
+                            
+                            # 3. 写入会员资产 (关键修改：增加 used_qty=0 和 buy_date)
                             cur.execute(
-                                "INSERT INTO salon_items (member_phone, item_name, total_qty, status) VALUES (?,?,?,?)",
-                                (p_phone, it_name, it_qty, "使用中"))
+                                "INSERT INTO salon_items (member_phone, item_name, total_qty, used_qty, status, unit, buy_date) VALUES (?,?,?,0,?,?,datetime('now','localtime'))",
+                                (p_phone, it_name, it_qty, "使用中", unit))
+                        
+                        # 4. 生成财务记录
                         cur.execute(
                             "INSERT INTO records (member_phone, date, items, total_amount, status, staff_name) VALUES (?, datetime('now','localtime'), ?, ?, '现结', ?)",
                             (p_phone, f"批量办理活动:{sel_act}", ad['price'], staff))
+                    
                     conn.commit()
                     st.toast(f"✅ 已成功为 {len(targs)} 位会员办理活动！", icon="🎊")
-                    time.sleep(1.5)  # 暂停 1.5 秒，给用户看提示的时间
+                    time.sleep(1.5)
                     st.rerun()
+        else:
+            st.warning("当前没有开启中的活动，请先在'设置活动礼包'中发布。")
 
     # --- t3: 活动列表管理 (包含实时详情) ---
     with t3:
