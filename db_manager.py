@@ -5,7 +5,7 @@ import time
 from functools import wraps
 
 # ---------- 重试装饰器（处理 429 限流）----------
-def retry_on_quota(max_retries=5, initial_delay=5):
+def retry_on_quota(max_retries=3, initial_delay=2):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -21,7 +21,7 @@ def retry_on_quota(max_retries=5, initial_delay=5):
                             time.sleep(delay)
                             delay *= 2
                         else:
-                            st.error("❌ 云端读取失败：请求次数过多。请稍后手动点击侧边栏「同步最新数据」按钮。")
+                            st.error("❌ 云端读取失败：请求次数过多。请稍后刷新页面。")
                             raise
                     else:
                         raise
