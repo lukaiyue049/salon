@@ -5,7 +5,7 @@ import time
 from functools import wraps
 
 # ---------- 重试装饰器（处理 429 限流）----------
-def retry_on_quota(max_retries=3, initial_delay=2):
+def retry_on_quota(max_retries=5, initial_delay=5):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -17,11 +17,11 @@ def retry_on_quota(max_retries=3, initial_delay=2):
                     error_msg = str(e)
                     if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
                         if attempt < max_retries - 1:
-                            st.warning(f"⚠️ API 配额超限，{delay}秒后重试... (第 {attempt+1} 次)")
+                            st.warning(f"⚠️ API 配额超限，{delay}秒后重试... (第 {attempt+1}/{max_retries} 次)")
                             time.sleep(delay)
                             delay *= 2
                         else:
-                            st.error("❌ 云端读取失败：请求次数过多，请稍后手动点击侧边栏「同步最新数据」按钮。")
+                            st.error("❌ 云端读取失败：请求次数过多。请稍后手动点击侧边栏「同步最新数据」按钮。")
                             raise
                     else:
                         raise
