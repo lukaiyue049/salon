@@ -24,7 +24,8 @@ def init_db():
         )
     ''')
 
-    # 2. 项目库存表
+    # 2. 项目库存表 (新增 unit 字段和 type 字段)
+    # type 字段用于区分 '实物产品' 和 '服务项目'
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS products (
             prod_name TEXT PRIMARY KEY,
@@ -36,7 +37,7 @@ def init_db():
         )
     ''')
 
-    # 3. 会员持有资产/次卡表（包含新字段）
+    # 3. 会员持有资产/次卡表
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS salon_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,11 +46,7 @@ def init_db():
             total_qty INTEGER,
             used_qty INTEGER DEFAULT 0,
             status TEXT DEFAULT '使用中',
-            unit TEXT DEFAULT '次',
-            buy_date TEXT,
-            source TEXT DEFAULT 'normal',
-            activity_name TEXT,
-            usage_type TEXT DEFAULT 'bought'
+            unit TEXT DEFAULT '次'
         )
     ''')
 
@@ -92,7 +89,7 @@ def init_db():
 
     conn.commit()
 
-    # 升级旧表结构
+    # --- 核心改进：自动升级旧表结构 ---
     upgrade_db(conn)
     conn.close()
 
@@ -100,50 +97,49 @@ def init_db():
 def upgrade_db(conn):
     """检测并补全缺少的列，支持功能动态升级"""
     cursor = conn.cursor()
-    
-    # members 表
     cursor.execute("PRAGMA table_info(members)")
     columns = [column[1] for column in cursor.fetchall()]
     if 'note' not in columns:
-        cursor.execute("ALTER TABLE members ADD COLUMN note TEXT")
+        cursor.execute("ALTER TABLE members ADD COLUMN note TEXT")  # 自动补齐 note 列
     if 'reg_date' not in columns:
-        cursor.execute("ALTER TABLE members ADD COLUMN reg_date TEXT")
+        cursor.execute("ALTER TABLE members ADD COLUMN reg_date TEXT")  # 顺便补齐注册日期列
 
-    # products 表
+    # --- 1. 检查并添加 products 表的列 ---
     cursor.execute("PRAGMA table_info(products)")
     columns = [column[1] for column in cursor.fetchall()]
     if 'unit' not in columns:
         cursor.execute("ALTER TABLE products ADD COLUMN unit TEXT DEFAULT '个'")
     if 'type' not in columns:
         cursor.execute("ALTER TABLE products ADD COLUMN type TEXT DEFAULT '实物产品'")
-    if 'last_updated' not in columns:
-        cursor.execute("ALTER TABLE products ADD COLUMN last_updated TEXT")
-        cursor.execute("UPDATE products SET last_updated = datetime('now','localtime')")
 
-    # salon_items 表（重点）
+    # --- 2. 检查并添加 salon_items 表的列 ---
     cursor.execute("PRAGMA table_info(salon_items)")
     columns = [column[1] for column in cursor.fetchall()]
-    
     if 'unit' not in columns:
         cursor.execute("ALTER TABLE salon_items ADD COLUMN unit TEXT DEFAULT '次'")
+
+    # 【新增修改点】：增加 buy_date 字段用于记录购入日期
     if 'buy_date' not in columns:
         cursor.execute("ALTER TABLE salon_items ADD COLUMN buy_date TEXT")
-    if 'source' not in columns:
-        cursor.execute("ALTER TABLE salon_items ADD COLUMN source TEXT DEFAULT 'normal'")
-    if 'activity_name' not in columns:
-        cursor.execute("ALTER TABLE salon_items ADD COLUMN activity_name TEXT")
-    if 'usage_type' not in columns:
-        cursor.execute("ALTER TABLE salon_items ADD COLUMN usage_type TEXT DEFAULT 'bought'")
 
-    # activities 表
+    # --- 3. 检查并添加 activities 表的 note 列 ---
     cursor.execute("PRAGMA table_info(activities)")
     columns = [column[1] for column in cursor.fetchall()]
     if 'note' not in columns:
         cursor.execute("ALTER TABLE activities ADD COLUMN note TEXT")
 
-    conn.commit()
+    # 新增：products 表增加 last_updated 字段
+    cursor.execute("PRAGMA table_info(products)")
+    columns = [column[1] for column in cursor.fetchall()]
+    if 'last_updated' not in columns:
+        # 1. 添加列，允许为空
+        cursor.execute("ALTER TABLE products ADD COLUMN last_updated TEXT")
+        # 2. 为现有行填充当前时间
+        cursor.execute("UPDATE products SET last_updated = datetime('now','localtime')")
+        # 注意：不再设置 DEFAULT，后续插入时在应用层显式提供时间
 
 
+# 如果直接运行此脚本，则执行初始化
 if __name__ == "__main__":
     init_db()
     print("✅ 数据库初始化/升级完成！")
