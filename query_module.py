@@ -545,9 +545,11 @@ def add_product_dialog():
                         if not check.empty: st.error("名称已存在")
                         else:
                             # 核心：直接存入 qty，不乘 spec
-                            conn.execute(
-                                "INSERT INTO products (prod_name, category, price, stock, unit, type, last_updated) VALUES (?, ?, ?, ?, ?, ?, datetime('now','localtime'))",
-                                (prod_name, str(spec), price, qty, u, p_type))
+                            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                            # 2. 将字符串作为参数传入
+                            conn.execute("INSERT INTO products (prod_name, category, price, stock, unit, type, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                (prod_name, str(spec), price, qty, u, p_type, now_str))
                             conn.commit()
                             st.toast(f"✅ {prod_name} 录入成功")
                             st.rerun()
