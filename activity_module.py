@@ -85,11 +85,12 @@ def show_activity_center():
             ms = pd.read_sql("SELECT phone, name FROM members", conn)
             
             # 搜索框：现在可以输入姓名或手机号进行过滤了
+            # 2. 修改 format_func，将完整手机号 x 转换为后四位显示
             targs = st.multiselect(
-                "选择办理会员 (可输入姓名或手机号搜索)", 
-                ms['phone'].tolist(),
-                format_func=lambda x: f"{ms[ms['phone'] == x]['name'].values[0]} ({x})",
-                placeholder="🔍 搜索姓名或手机号..."
+                "选择办理会员 (支持姓名或手机号搜索)", 
+                options=ms['phone'].tolist(),
+                format_func=lambda x: f"{ms[ms['phone'] == x]['name'].values[0]} ({str(x)[-4:]})",
+                placeholder="🔍 输入姓名或手机号搜索..."
             )
             
             staff_df = pd.read_sql("SELECT name FROM staffs", conn)
