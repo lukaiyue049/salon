@@ -1,49 +1,23 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
+from supabase import create_client, Client
 import pandas as pd
-import time
-from functools import wraps
-
-# ---------- 重试装饰器（处理 429 限流）----------
-def retry_on_quota(max_retries=3, initial_delay=2):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            delay = initial_delay
-            for attempt in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    error_msg = str(e)
-                    if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-                        if attempt < max_retries - 1:
-                            st.warning(f"⚠️ API 配额超限，{delay}秒后重试... (第 {attempt+1}/{max_retries} 次)")
-                            time.sleep(delay)
-                            delay *= 2
-                        else:
-                            st.error("❌ 云端读取失败：请求次数过多。请稍后刷新页面。")
-                            raise
-                    else:
-                        raise
-            return None
-        return wrapper
-    return decorator
 
 @st.cache_resource
-def get_conn():
-    return st.connection("gsheets", type=GSheetsConnection)
+def get_supabase() -> Client:
+    url = st.secrets["supabase"]["url"]
+    key = st.secrets["supabase"]["key"]
+    return create_client(url, key)
 
-@retry_on_quota()
-def read_data(table_name):
-    conn = get_conn()
+def read_data(table_name: str) -> pd.DataFrame:
+    supabase = get_supabase()
     try:
-        df = conn.read(worksheet=table_name, ttl="0")
-        if df is None or df.empty:
+        response = supabase.table(table_name).select("*").execute()
+        data = response.data
+        if not data:
             return create_empty_df(table_name)
-        
-        # 数据清洗
+        df = pd.DataFrame(data)
         if table_name == "members":
-            df['phone'] = df['phone'].astype(str).str.split('.').str[0].str.strip()
+            df['phone'] = df['phone'].astype(str)
             df['balance'] = pd.to_numeric(df['balance'], errors='coerce').fillna(0.0)
             df['debt'] = pd.to_numeric(df['debt'], errors='coerce').fillna(0.0)
         elif table_name == "products":
@@ -51,10 +25,21 @@ def read_data(table_name):
             df['stock'] = pd.to_numeric(df['stock'], errors='coerce').fillna(0.0)
         return df
     except Exception as e:
-        st.error(f"读取云端表 {table_name} 失败: {e}")
+        st.error(f"❌ 读取表 {table_name} 失败: {e}")
         return create_empty_df(table_name)
 
-def create_empty_df(table_name):
+def save_data(table_name: str, df: pd.DataFrame):
+    supabase = get_supabase()
+    try:
+        records = df.to_dict(orient='records')
+        for record in records:
+            clean_record = {k: v for k, v in record.items() if pd.notna(v)}
+            supabase.table(table_name).upsert(clean_record).execute()
+        st.toast(f"✅ {table_name} 同步成功")
+    except Exception as e:
+        st.error(f"❌ 保存 {table_name} 失败: {e}")
+
+def create_empty_df(table_name: str) -> pd.DataFrame:
     cols = {
         "members": ["phone", "name", "balance", "skin_info", "debt", "note", "reg_date"],
         "products": ["prod_name", "category", "price", "stock", "unit", "type", "last_updated"],
@@ -66,24 +51,10 @@ def create_empty_df(table_name):
     }
     return pd.DataFrame(columns=cols.get(table_name, []))
 
-@retry_on_quota()
-def save_data(table_name, df):
-    conn = get_conn()
-    try:
-        write_df = df.copy()
-        for col in write_df.columns:
-            write_df[col] = write_df[col].apply(lambda x: "" if pd.isna(x) else str(x))
-        conn.update(worksheet=table_name, data=write_df)
-        st.toast(f"✅ 云端 {table_name} 更新成功")
-    except Exception as e:
-        st.error(f"❌ 同步云端失败: {e}")
-
 def init_db():
     try:
-        members_df = read_data("members")
-        required_cols = ['phone', 'name', 'balance', 'skin_info', 'debt', 'note', 'reg_date']
-        missing = [c for c in required_cols if c not in members_df.columns]
-        if missing:
-            st.error(f"🚨 警告：云端 'members' 表缺少列: {missing}。请在 Google 表格中手动插入这些列标题！")
-    except:
-        st.info("首次连接云端，请确保 Google Sheets 工作表名称已设置正确。")
+        supabase = get_supabase()
+        supabase.table("members").select("phone").limit(1).execute()
+        st.success("✅ Supabase 连接成功")
+    except Exception as e:
+        st.error(f"❌ Supabase 连接失败: {e}")
