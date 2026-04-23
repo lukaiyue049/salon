@@ -21,16 +21,16 @@ def show(data_bundle):
                 if c3.button("🗑️ 删除", key=f"del_staff_{idx}", use_container_width=True):
                     new_df = staff_df.drop(idx)
                     save_data("staffs", new_df)
-                    st.cache_data.clear()
-                    st.rerun()
+                    st.cache_data.clear()   # ← 新增
+                    st.rerun()             # ← 新增
     with st.expander("➕ 添加新员工"):
         new_name = st.text_input("员工姓名")
         if st.button("确认添加"):
             if new_name:
                 new_row = pd.DataFrame([{"name": new_name}])
                 save_data("staffs", pd.concat([staff_df, new_row], ignore_index=True))
-                st.cache_data.clear()
-                st.rerun()
+                st.cache_data.clear()   # ← 新增
+                st.rerun()             # ← 新增
 
     st.divider()
 
@@ -45,8 +45,8 @@ def show(data_bundle):
         new_config = pd.DataFrame([{"item": "debt_limit", "value": str(new_limit)}])
         save_data("sys_config", new_config)
         st.success("设置已保存")
-        st.cache_data.clear()
-        st.rerun()
+        st.cache_data.clear()   # ← 新增
+        st.rerun()             # ← 新增
 
     st.divider()
 
